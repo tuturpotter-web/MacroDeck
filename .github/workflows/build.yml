@@ -1,0 +1,208 @@
+name: Build MacroDeck .exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # bouton manuel sur GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Python ────────────────────────────────────────────────────
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyserial bleak psutil gputil pynput pywin32 keyboard mouse websockets aiofiles pyinstaller
+
+      # ── 3. Compiler backend.py ───────────────────────────────────────
+      - name: Build backend.exe (PyInstaller)
+        run: |
+          pyinstaller --onefile --noconsole --name MacroDeck_Backend `
+            --hidden-import win32api `
+            --hidden-import win32con `
+            --hidden-import win32gui `
+            --hidden-import win32process `
+            --hidden-import pynput.keyboard `
+            --hidden-import pynput.mouse `
+            --hidden-import bleak `
+            --hidden-import psutil `
+            backend.py
+
+      # ── 4. Node.js ───────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 5. Créer structure Electron ──────────────────────────────────
+      - name: Create Electron project
+        run: |
+          New-Item -ItemType Directory -Force -Path electron
+          Copy-Item gui.html electron/index.html
+
+      - name: Write package.json
+        run: |
+          $pkg = @'
+          {
+            "name": "macrodeck",
+            "version": "1.0.0",
+            "description": "MacroDeck — StreamDeck maison ESP32",
+            "main": "main.js",
+            "scripts": {
+              "build": "electron-builder --win --x64"
+            },
+            "build": {
+              "appId": "com.macrodeck.app",
+              "productName": "MacroDeck",
+              "win": {
+                "target": "portable",
+                "icon": "icon.ico"
+              },
+              "extraResources": [
+                { "from": "../dist/MacroDeck_Backend.exe", "to": "MacroDeck_Backend.exe" }
+              ],
+              "directories": {
+                "output": "../release"
+              }
+            },
+            "devDependencies": {
+              "electron": "^28.0.0",
+              "electron-builder": "^24.0.0"
+            }
+          }
+          '@
+          Set-Content -Path electron/package.json -Value $pkg
+
+      - name: Write main.js
+        run: |
+          $main = @'
+          const { app, BrowserWindow, ipcMain } = require('electron')
+          const path = require('path')
+          const { spawn } = require('child_process')
+          const fs = require('fs')
+
+          let mainWindow, backendProcess
+
+          function getBackendPath() {
+            if (app.isPackaged) {
+              return path.join(process.resourcesPath, 'MacroDeck_Backend.exe')
+            }
+            return path.join(__dirname, '..', 'dist', 'MacroDeck_Backend.exe')
+          }
+
+          function startBackend() {
+            const exePath = getBackendPath()
+            if (!fs.existsSync(exePath)) {
+              console.error('Backend introuvable:', exePath)
+              return
+            }
+            backendProcess = spawn(exePath, [], { detached: false, windowsHide: true })
+            backendProcess.on('error', e => console.error('Backend error:', e))
+          }
+
+          function createWindow() {
+            mainWindow = new BrowserWindow({
+              width: 1280,
+              height: 820,
+              minWidth: 900,
+              minHeight: 600,
+              frame: false,
+              backgroundColor: '#08090c',
+              webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                preload: path.join(__dirname, 'preload.js')
+              },
+              show: false
+            })
+            mainWindow.loadFile('index.html')
+            mainWindow.once('ready-to-show', () => mainWindow.show())
+          }
+
+          ipcMain.on('minimize', () => mainWindow.minimize())
+          ipcMain.on('maximize', () => mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize())
+          ipcMain.on('close', () => { if (backendProcess) backendProcess.kill(); app.quit() })
+
+          app.whenReady().then(() => {
+            startBackend()
+            setTimeout(createWindow, 1200)
+          })
+
+          app.on('window-all-closed', () => {
+            if (backendProcess) backendProcess.kill()
+            app.quit()
+          })
+          '@
+          Set-Content -Path electron/main.js -Value $main
+
+      - name: Write preload.js
+        run: |
+          $preload = @'
+          const { contextBridge, ipcRenderer } = require('electron')
+          contextBridge.exposeInMainWorld('electron', {
+            minimize: () => ipcRenderer.send('minimize'),
+            maximize: () => ipcRenderer.send('maximize'),
+            close:    () => ipcRenderer.send('close')
+          })
+          '@
+          Set-Content -Path electron/preload.js -Value $preload
+
+      # ── 6. Créer icône placeholder si absente ────────────────────────
+      - name: Create placeholder icon if missing
+        run: |
+          if (!(Test-Path "electron/icon.ico")) {
+            # Télécharge une icône générique
+            Invoke-WebRequest -Uri "https://www.google.com/favicon.ico" -OutFile "electron/icon.ico"
+          }
+
+      # ── 7. npm install + build Electron ──────────────────────────────
+      - name: npm install
+        working-directory: electron
+        run: npm install
+
+      - name: Build Electron .exe
+        working-directory: electron
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 8. Upload artifact ───────────────────────────────────────────
+      - name: Upload MacroDeck.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacroDeck-Windows-x64
+          path: release/*.exe
+          retention-days: 30
+
+      # ── 9. Créer une Release GitHub ──────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v${{ github.run_number }}
+          name: MacroDeck v${{ github.run_number }}
+          body: |
+            ## MacroDeck — Build automatique
+
+            ### Contenu
+            - `MacroDeck.exe` — application portable, aucune installation requise
+            - Backend Python embarqué (volume, médias, raccourcis, etc.)
+            - Interface dark premium
+
+            ### Utilisation
+            Double-clic sur `MacroDeck.exe` et connecte ton ESP32-S3.
+          files: release/*.exe
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
