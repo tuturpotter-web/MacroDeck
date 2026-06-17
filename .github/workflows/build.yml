@@ -165,13 +165,63 @@ jobs:
           '@
           Set-Content -Path electron/preload.js -Value $preload
 
-      # ── 6. Créer icône placeholder si absente ────────────────────────
-      - name: Create placeholder icon if missing
+      # ── 6. Générer une icône 256x256 valide en PowerShell ────────────
+      - name: Generate icon 256x256
         run: |
-          if (!(Test-Path "electron/icon.ico")) {
-            # Télécharge une icône générique
-            Invoke-WebRequest -Uri "https://www.google.com/favicon.ico" -OutFile "electron/icon.ico"
-          }
+          Add-Type -AssemblyName System.Drawing
+          $size = 256
+          $bmp = New-Object System.Drawing.Bitmap($size, $size)
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.SmoothingMode = 'AntiAlias'
+
+          # Fond dégradé violet
+          $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            [System.Drawing.Point]::new(0,0),
+            [System.Drawing.Point]::new($size,$size),
+            [System.Drawing.Color]::FromArgb(255,99,102,241),
+            [System.Drawing.Color]::FromArgb(255,30,30,60)
+          )
+          $g.FillRectangle($brush, 0, 0, $size, $size)
+
+          # Texte "MD"
+          $font = New-Object System.Drawing.Font("Arial", 90, [System.Drawing.FontStyle]::Bold)
+          $textBrush = [System.Drawing.Brushes]::White
+          $sf = New-Object System.Drawing.StringFormat
+          $sf.Alignment = 'Center'
+          $sf.LineAlignment = 'Center'
+          $g.DrawString("MD", $font, $textBrush, [System.Drawing.RectangleF]::new(0,0,$size,$size), $sf)
+
+          $g.Dispose()
+
+          # Sauvegarder en PNG puis convertir en ICO 256x256
+          $png = "electron\icon.png"
+          $ico = "electron\icon.ico"
+          $bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+          $bmp.Dispose()
+
+          # Construire le fichier ICO manuellement (header + 256x256)
+          $pngBytes = [System.IO.File]::ReadAllBytes($png)
+          $ms = New-Object System.IO.MemoryStream
+          $bw = New-Object System.IO.BinaryWriter($ms)
+          # ICO header
+          $bw.Write([uint16]0)      # reserved
+          $bw.Write([uint16]1)      # type: icon
+          $bw.Write([uint16]1)      # count: 1 image
+          # Image directory entry
+          $bw.Write([byte]0)        # width  0 = 256
+          $bw.Write([byte]0)        # height 0 = 256
+          $bw.Write([byte]0)        # color count
+          $bw.Write([byte]0)        # reserved
+          $bw.Write([uint16]1)      # planes
+          $bw.Write([uint16]32)     # bit count
+          $bw.Write([uint32]$pngBytes.Length)
+          $bw.Write([uint32]22)     # offset = 6 + 16
+          # PNG data
+          $bw.Write($pngBytes)
+          $bw.Flush()
+          [System.IO.File]::WriteAllBytes($ico, $ms.ToArray())
+          $ms.Dispose()
+          Write-Host "Icone generee : $ico ($($pngBytes.Length) bytes)"
 
       # ── 7. npm install + build Electron ──────────────────────────────
       - name: npm install
