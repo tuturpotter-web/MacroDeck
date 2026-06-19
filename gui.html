@@ -1,87 +1,1258 @@
-name: Build MacroDeck EXE
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MacroDeck</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-  workflow_dispatch:
+:root[data-theme="dark"]{
+  --bg0:#08090c;--bg1:#0d0e12;--bg2:#12141a;--bg3:#181b22;--bg4:#1e212b;
+  --border:#ffffff0f;--border2:#ffffff18;--border3:#ffffff28;
+  --accent:#6366f1;--accent-dim:#6366f120;--accent-glow:#6366f145;
+  --text:#f1f5f9;--text2:#94a3b8;--text3:#475569;
+  --green:#22c55e;--yellow:#eab308;--red:#ef4444;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316;
+  --card:linear-gradient(160deg,#1c1f29,#141620);
+  --dev:linear-gradient(160deg,#16181f,#0f1015);
+}
+:root[data-theme="light"]{
+  --bg0:#f0f2f5;--bg1:#ffffff;--bg2:#f5f7fa;--bg3:#e8ecf0;--bg4:#dde2e8;
+  --border:#00000010;--border2:#00000018;--border3:#00000028;
+  --accent:#6366f1;--accent-dim:#6366f115;--accent-glow:#6366f130;
+  --text:#0f172a;--text2:#475569;--text3:#94a3b8;
+  --green:#16a34a;--yellow:#ca8a04;--red:#dc2626;--blue:#2563eb;--purple:#9333ea;--orange:#ea580c;
+  --card:linear-gradient(160deg,#ffffff,#f5f7fa);
+  --dev:linear-gradient(160deg,#f0f2f5,#e8ecf0);
+}
 
-jobs:
-  build:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;-webkit-font-smoothing:antialiased;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border3);border-radius:4px}
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+/* ── TOPBAR ── */
+.topbar{height:46px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0;z-index:50}
+.logo{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.logo-ic{width:24px;height:24px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px}
+.logo-t{font-size:13px;font-weight:700;letter-spacing:-.2px}
+.logo-v{font-size:9px;font-weight:600;color:var(--accent);background:var(--accent-dim);padding:1px 5px;border-radius:3px;border:1px solid var(--accent-glow)}
+.vdiv{width:1px;height:18px;background:var(--border2);flex-shrink:0}
+.top-nav{display:flex;gap:1px}
+.tn-btn{padding:4px 11px;border-radius:5px;border:none;background:none;color:var(--text2);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;font-weight:500;transition:all .12s}
+.tn-btn:hover{color:var(--text);background:var(--bg3)}
+.tn-btn.active{color:var(--text);background:var(--bg4)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.st-pill{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);font-size:11px;color:var(--text3);flex-shrink:0}
+.st-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);transition:all .3s;flex-shrink:0}
+.st-dot.flash{background:var(--green)!important;box-shadow:0 0 6px var(--green)}
+.st-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green)}
+.tbtn{height:28px;padding:0 10px;border-radius:5px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;transition:all .12s;display:flex;align-items:center;gap:4px;flex-shrink:0}
+.tbtn:hover{background:var(--bg4);color:var(--text)}
+.tbtn.pr{background:var(--accent);border-color:transparent;color:#fff}
+.tbtn.pr:hover{background:#5052d5}
+.ic-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .12s}
+.ic-btn:hover{background:var(--bg4);color:var(--text)}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+/* ── APP SHELL ── */
+.shell{display:flex;height:calc(100vh - 46px)}
 
-      - name: Install dependencies
-        run: |
-          pip install pyinstaller
-          pip install pyserial psutil GPUtil keyboard mouse websockets
-          pip install pywin32 comtypes pycaw WMI
+/* ── SIDEBAR ── */
+.sidebar{width:48px;background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;flex-shrink:0}
+.sb-btn{width:34px;height:34px;border-radius:6px;border:none;background:none;color:var(--text3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .12s;position:relative;flex-shrink:0}
+.sb-btn:hover{background:var(--bg3);color:var(--text2)}
+.sb-btn.active{background:var(--accent-dim);color:var(--accent)}
+.sb-btn.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:16px;background:var(--accent);border-radius:0 2px 2px 0}
+.sb-sep{width:22px;height:1px;background:var(--border);margin:3px 0}
 
-      - name: Build EXE with PyInstaller
-        run: |
-          pyinstaller `
-            --onefile `
-            --noconsole `
-            --name MacroDeck `
-            --add-data "gui.html;." `
-            --hidden-import win32gui `
-            --hidden-import win32process `
-            --hidden-import win32api `
-            --hidden-import win32con `
-            --hidden-import pycaw.pycaw `
-            --hidden-import comtypes `
-            --hidden-import wmi `
-            --hidden-import GPUtil `
-            --hidden-import serial `
-            --hidden-import serial.tools.list_ports `
-            --hidden-import websockets `
-            --hidden-import keyboard `
-            --hidden-import mouse `
-            backend.py
+/* ── VIEWS ── */
+.views{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.view{display:none;flex:1;overflow:hidden}
+.view.active{display:flex}
 
-      - name: Upload EXE as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: MacroDeck-EXE
-          path: dist/MacroDeck.exe
+/* ── VIEW: DEVICE (seule la device card, tout le reste dans des panels/drawers) ── */
+.device-view{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg0);overflow:auto;padding:24px}
 
-      - name: Generate build tag
-        id: tag
-        shell: bash
-        run: echo "name=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+/* ── DEVICE CARD ── */
+.device{background:var(--dev);border-radius:18px;border:1px solid var(--border2);padding:26px 24px;box-shadow:0 32px 64px #00000050,inset 0 1px 0 #ffffff08;width:min(480px,100%);flex-shrink:0}
+[data-theme="light"] .device{box-shadow:0 8px 32px #00000015}
+.dev-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.dev-name{font-size:10px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;font-weight:500}
+.dev-conn{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text3)}
+.dev-conn-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);transition:all .3s}
+.dev-conn-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green)}
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          files: dist/MacroDeck.exe
-          name: MacroDeck build #${{ github.run_number }}
-          body: |
-            ## MacroDeck — build automatique #${{ github.run_number }}
+/* Profil switcher sur la device */
+.dev-profile{display:flex;align-items:center;gap:6px;margin-bottom:14px;background:var(--bg0);border-radius:8px;padding:6px 10px;border:1px solid var(--border)}
+.dev-profile-lbl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.dev-profile-name{font-size:12px;font-weight:600;color:var(--accent);flex:1}
+.dev-profile-arrow{width:22px;height:22px;border-radius:4px;border:1px solid var(--border2);background:none;color:var(--text3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:all .12s}
+.dev-profile-arrow:hover{background:var(--bg3);color:var(--text)}
 
-            Compilé depuis le commit ${{ github.sha }}
+/* Boutons */
+.btn-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:12px}
+.hw-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;aspect-ratio:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:all .12s;position:relative;overflow:hidden;padding:6px;user-select:none}
+.hw-btn:hover{border-color:var(--border3);transform:translateY(-1px);box-shadow:0 4px 12px #00000030}
+.hw-btn.pressed{border-color:var(--accent);transform:scale(.94);box-shadow:0 0 16px var(--accent-glow)}
+.hw-btn.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-glow)}
+.btn-num{position:absolute;top:5px;left:6px;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.btn-ic{font-size:17px;line-height:1}
+.btn-nm{font-size:8px;color:var(--text2);text-align:center;line-height:1.3;font-weight:500}
+.btn-bar{position:absolute;bottom:0;left:6px;right:6px;height:2px;border-radius:2px;background:var(--accent);opacity:.35;transition:opacity .2s}
+.hw-btn.selected .btn-bar,.hw-btn.pressed .btn-bar{opacity:1}
+.btn-cnt{position:absolute;top:4px;right:5px;font-size:8px;color:var(--accent);background:var(--accent-dim);padding:1px 3px;border-radius:3px;font-family:'JetBrains Mono',monospace}
 
-            ### Installation
-            1. Télécharge `MacroDeck.exe`
-            2. Place-le dans un dossier dédié
-            3. Double-clique pour lancer — le navigateur s'ouvre automatiquement sur l'interface
-            4. Aucune fenêtre console ne doit apparaître (même brièvement)
+/* LED zone */
+.led-zone{display:grid;grid-template-columns:1fr 12px 12px 1fr;gap:6px;margin-bottom:12px;align-items:center}
+.led-strip{height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;gap:6px;background:var(--bg0);border:1px solid var(--border);overflow:hidden}
+.led-pip{width:10px;height:10px;border-radius:50%;background:var(--bg4);flex-shrink:0;transition:all .4s;border:1px solid var(--border)}
+.led-lbl{font-size:8px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;font-weight:500}
+.led-pct{font-size:9px;font-weight:600;margin-left:auto;font-family:'JetBrains Mono',monospace;transition:color .4s}
+.usb-c{width:12px;height:24px;background:var(--bg0);border-radius:3px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.usb-c i{display:block;width:7px;height:11px;background:var(--bg3);border-radius:2px;border:1px solid var(--border)}
 
-            Si une instance tourne déjà, un message d'information s'affiche au lieu d'en relancer une seconde.
+/* Knobs */
+.pots-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.hw-pot{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:ns-resize;user-select:none}
+.pot-lbl{font-size:8px;color:var(--text3);text-align:center;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
+.pot-val{font-size:9px;color:var(--accent);font-weight:600;font-family:'JetBrains Mono',monospace}
 
-            ### Dépendances externes (optionnel)
-            - [OpenHardwareMonitor](https://openhardwaremonitor.org/) pour les températures CPU/GPU
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+/* ── DRAWER (panneau latéral qui s'ouvre sur la droite) ── */
+.drawer-overlay{position:fixed;inset:0;background:#00000055;z-index:200;display:none;backdrop-filter:blur(2px)}
+.drawer-overlay.open{display:block}
+.drawer{position:fixed;top:0;right:0;width:320px;height:100%;background:var(--bg1);border-left:1px solid var(--border2);display:flex;flex-direction:column;z-index:201;transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);box-shadow:-20px 0 60px #00000040}
+.drawer.open{transform:translateX(0)}
+.drawer-hdr{height:46px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0}
+.drawer-title{font-size:13px;font-weight:600;flex:1}
+.drawer-close{width:28px;height:28px;border-radius:5px;border:none;background:var(--bg3);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px}
+.drawer-close:hover{background:var(--bg4)}
+.drawer-body{flex:1;overflow-y:auto;padding:16px}
+
+/* Tabs internes au drawer */
+.d-tabs{display:flex;gap:2px;background:var(--bg2);border-radius:6px;padding:3px;margin-bottom:14px}
+.d-tab{flex:1;padding:4px;border-radius:4px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;transition:all .12s;text-align:center}
+.d-tab.active{background:var(--bg4);color:var(--text);box-shadow:0 1px 3px #00000020}
+
+/* Champs */
+.grp{margin-bottom:14px}
+.grp-lbl{font-size:10px;color:var(--text3);margin-bottom:5px;font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.inp{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);padding:6px 9px;border-radius:6px;font-size:12px;outline:none;font-family:'Inter',sans-serif;transition:border .12s}
+.inp:focus{border-color:var(--accent)}
+.sel{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);padding:6px 9px;border-radius:6px;font-size:12px;outline:none;font-family:'Inter',sans-serif;cursor:pointer}
+.sep{height:1px;background:var(--border);margin:12px 0}
+
+/* Chips d'actions */
+.chips{display:flex;flex-wrap:wrap;gap:4px;min-height:28px}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:3px 8px;border-radius:5px;font-size:11px}
+.chip-x{color:var(--text3);cursor:pointer;font-size:9px;padding:0 1px}
+.chip-x:hover{color:var(--red)}
+.add-btn{width:100%;margin-top:6px;padding:6px;background:none;border:1px dashed var(--border2);color:var(--text3);border-radius:6px;cursor:pointer;font-size:11px;font-family:'Inter',sans-serif;transition:all .12s}
+.add-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.test-row{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
+.test-btn{padding:5px;border-radius:5px;border:1px solid var(--border);background:var(--bg2);color:var(--text3);cursor:pointer;font-size:10px;font-family:'Inter',sans-serif;transition:all .12s}
+.test-btn:hover{border-color:var(--accent-glow);color:var(--text);background:var(--accent-dim)}
+.frame-box{background:var(--bg0);border:1px solid var(--border);border-radius:5px;padding:6px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);word-break:break-all;line-height:1.5}
+
+/* Métriques mini dans drawer */
+.m-row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.m-lbl{font-size:10px;color:var(--text2);width:52px;flex-shrink:0;font-weight:500}
+.m-bar{flex:1;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.m-fill{height:100%;border-radius:2px;transition:width .7s cubic-bezier(.4,0,.2,1)}
+.m-val{font-size:10px;font-weight:600;width:34px;text-align:right;font-family:'JetBrains Mono',monospace}
+input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--bg1);box-shadow:0 0 5px var(--accent-glow)}
+
+/* ── VIEW: LED MÉTRIQUES ── */
+.metrics-view{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.mc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.mc{background:var(--bg1);border:1px solid var(--border);border-radius:10px;padding:14px}
+.mc-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.mc-title{font-size:12px;font-weight:600;flex:1}
+.mc-val{font-size:15px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.mc-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.mc-fill{height:100%;border-radius:3px;transition:width .7s cubic-bezier(.4,0,.2,1),background .5s}
+.mc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.mc-row{display:flex;align-items:center;justify-content:space-between;font-size:10px}
+.mc-k{color:var(--text3)}.mc-v{font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text)}
+.disk-r{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.disk-nm{font-size:10px;color:var(--text2);width:36px;flex-shrink:0}
+.disk-b{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.disk-f{height:100%;border-radius:2px;transition:width .7s}
+.disk-i{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3);width:80px;text-align:right}
+.proc-r{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)}
+.proc-r:last-child{border:none}
+.proc-nm{font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proc-c{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--blue);width:36px;text-align:right}
+.proc-m{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--purple);width:36px;text-align:right}
+
+/* ── VIEW: PROFILS ── */
+.profiles-view{flex:1;overflow-y:auto;padding:20px}
+.profiles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px}
+.profile-card{background:var(--bg1);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;position:relative}
+.profile-card:hover{border-color:var(--border3)}
+.profile-card.active{border-color:var(--accent);background:var(--accent-dim)}
+.pc-name{font-size:13px;font-weight:600;margin-bottom:4px}
+.pc-trigger{font-size:10px;color:var(--text3)}
+.pc-actions{display:flex;gap:5px;margin-top:10px}
+.pc-btn{padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:none;color:var(--text3);cursor:pointer;font-size:10px;font-family:'Inter',sans-serif;transition:all .12s}
+.pc-btn:hover{background:var(--bg3);color:var(--text)}
+.pc-btn.del:hover{background:#ef444420;border-color:var(--red);color:var(--red)}
+.pc-active-badge{position:absolute;top:10px;right:10px;font-size:9px;background:var(--accent);color:#fff;padding:2px 6px;border-radius:3px}
+.new-profile-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:none;border:1px dashed var(--border2);border-radius:10px;padding:20px;color:var(--text3);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;transition:all .15s;width:100%;margin-bottom:10px}
+.new-profile-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+
+/* ── VIEW: SERIAL ── */
+.serial-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.serial-bar{height:38px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg1)}
+.s-dot{width:6px;height:6px;border-radius:50%;background:var(--text3);transition:all .3s;flex-shrink:0}
+.s-dot.live{background:var(--green);box-shadow:0 0 5px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.serial-title{font-size:11px;font-weight:600;color:var(--text2);font-family:'JetBrains Mono',monospace}
+.fpills{display:flex;gap:2px;flex-wrap:wrap}
+.fp{padding:2px 7px;border-radius:20px;border:1px solid transparent;background:none;color:var(--text3);font-size:10px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .12s}
+.fp:hover{color:var(--text2);background:var(--bg3)}
+.fp.active{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
+.serial-log{flex:1;overflow-y:auto;padding:4px 0;font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg0)}
+.log-r{display:flex;align-items:baseline;padding:1px 14px;transition:background .1s;line-height:1.65}
+.log-r:hover{background:var(--bg2)}
+.lt{color:var(--text3);min-width:90px;flex-shrink:0;font-size:10px}
+.ld{font-weight:600;min-width:26px;flex-shrink:0;font-size:10px}
+.ld.rx{color:var(--green)}.ld.tx{color:var(--blue)}.ld.sys{color:var(--text3)}
+.ltp{min-width:70px;flex-shrink:0;font-size:10px}
+.ltp.press{color:#818cf8}.ltp.long_press{color:#fbbf24}.ltp.double_click{color:#e879f9}
+.ltp.pot{color:#34d399}.ltp.led{color:#60a5fa}.ltp.sys{color:var(--text3)}
+.lf{color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── VIEW: SETTINGS ── */
+.settings-view{flex:1;overflow-y:auto;padding:24px}
+.settings-inner{max-width:480px}
+.settings-title{font-size:13px;font-weight:600;margin-bottom:18px}
+
+/* ── MODAL ACTION ── */
+.modal-ov{position:fixed;inset:0;background:#00000070;z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);display:none}
+.modal-ov.open{display:flex}
+.modal{background:var(--bg1);border:1px solid var(--border2);border-radius:14px;width:min(560px,95vw);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px #00000060}
+.modal-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.modal-t{font-size:13px;font-weight:600;flex:1}
+.modal-x{width:26px;height:26px;border-radius:5px;border:none;background:var(--bg3);color:var(--text2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}
+.modal-x:hover{background:var(--bg4)}
+.modal-body{flex:1;overflow-y:auto;padding:14px 18px}
+.modal-foot{padding:10px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:7px;flex-shrink:0}
+.act-cats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
+.ac{padding:3px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);cursor:pointer;font-size:11px;transition:all .12s}
+.ac:hover,.ac.active{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
+.act-search{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);padding:7px 11px;border-radius:7px;font-size:12px;outline:none;font-family:'Inter',sans-serif;margin-bottom:10px;transition:border .12s}
+.act-search:focus{border-color:var(--accent)}
+.act-list{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
+.act-item{display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;transition:all .12s}
+.act-item:hover{border-color:var(--accent-glow);background:var(--accent-dim)}
+.act-item.sel{border-color:var(--accent);background:var(--accent-dim)}
+.ai-ic{font-size:15px;flex-shrink:0}
+.ai-n{font-size:12px;font-weight:500;color:var(--text)}
+.ai-d{font-size:10px;color:var(--text3)}
+.act-params{background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:11px;margin-bottom:10px}
+.ap-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.p-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.p-lbl{font-size:11px;color:var(--text2);width:88px;flex-shrink:0}
+.p-inp{flex:1;background:var(--bg0);border:1px solid var(--border2);color:var(--text);padding:5px 8px;border-radius:5px;font-size:11px;outline:none;font-family:'Inter',sans-serif;transition:border .12s}
+.p-inp:focus{border-color:var(--accent)}
+.p-sel{flex:1;background:var(--bg0);border:1px solid var(--border2);color:var(--text);padding:5px 8px;border-radius:5px;font-size:11px;outline:none;font-family:'Inter',sans-serif}
+.app-srch{width:100%;background:var(--bg0);border:1px solid var(--border2);color:var(--text);padding:6px 9px;border-radius:5px;font-size:11px;outline:none;margin-bottom:6px}
+.app-srch:focus{border-color:var(--accent)}
+.app-lst{max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:7px}
+.app-e{display:flex;align-items:center;gap:7px;padding:6px 9px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+.app-e:last-child{border:none}
+.app-e:hover{background:var(--accent-dim)}
+.app-e-nm{font-size:11px;flex:1}
+.app-e-tp{font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:7px 14px;border-radius:9px;font-size:12px;z-index:9999;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity .18s,transform .18s;box-shadow:0 6px 20px #00000040}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Responsive */
+@media(max-width:700px){
+  .device{width:100%}
+  .drawer{width:100%}
+  .mc-grid{grid-template-columns:1fr}
+  .profiles-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-ic">🎛</div>
+    <span class="logo-t">MacroDeck</span>
+    <span class="logo-v">V15</span>
+  </div>
+  <div class="vdiv"></div>
+  <div class="top-nav">
+    <button class="tn-btn active" onclick="switchView('device',this)">🎛 Device</button>
+    <button class="tn-btn" onclick="switchView('metrics',this)">📊 Métriques</button>
+    <button class="tn-btn" onclick="switchView('profiles',this)">◈ Profils</button>
+    <button class="tn-btn" onclick="switchView('serial',this)">⌨ Serial</button>
+    <button class="tn-btn" onclick="switchView('settings',this)">⚙ Paramètres</button>
+  </div>
+  <div class="tb-right">
+    <div class="st-pill" title="Sauvegarde automatique active"><div class="st-dot" id="autosaveDot" style="background:var(--text3)"></div><span style="font-size:10px">Auto-save</span></div>
+    <div class="st-pill"><div class="st-dot" id="wsDot"></div><span id="wsLbl">Déconnecté</span></div>
+    <button class="ic-btn" onclick="toggleTheme()" id="themeBtn" title="Thème">🌙</button>
+    <button class="tbtn pr" onclick="saveConfig()">💾 Enregistrer</button>
+  </div>
+</div>
+
+<div class="shell">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <button class="sb-btn active" title="Device" onclick="switchView('device',null);sbActive(this)">🎛</button>
+    <button class="sb-btn" title="Métriques" onclick="switchView('metrics',null);sbActive(this)">📊</button>
+    <button class="sb-btn" title="Profils" onclick="switchView('profiles',null);sbActive(this)">◈</button>
+    <div class="sb-sep"></div>
+    <button class="sb-btn" title="Serial" onclick="switchView('serial',null);sbActive(this)">⌨</button>
+    <button class="sb-btn" title="Paramètres" onclick="switchView('settings',null);sbActive(this)">⚙</button>
+  </div>
+
+  <div class="views">
+    <!-- ── VIEW DEVICE ── -->
+    <div class="view active" id="v-device">
+      <div class="device-view">
+        <div class="device" id="deviceCard">
+          <div class="dev-hdr">
+            <div class="dev-name">MacroDeck — ESP32-S3</div>
+            <div class="dev-conn"><div class="dev-conn-dot" id="devDot"></div><span id="devLbl" style="font-size:10px;color:var(--text3)">—</span></div>
+          </div>
+          <!-- Profil switcher -->
+          <div class="dev-profile">
+            <span class="dev-profile-lbl">Profil</span>
+            <span class="dev-profile-name" id="activeProfileName">Global</span>
+            <button class="dev-profile-arrow" onclick="prevProfile()" title="Profil précédent">‹</button>
+            <button class="dev-profile-arrow" onclick="nextProfile()" title="Profil suivant">›</button>
+          </div>
+          <div class="btn-grid" id="btnGrid"></div>
+          <div class="led-zone">
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div class="led-strip"><div class="led-pip" id="p0a"></div><div class="led-pip" id="p0b"></div><div class="led-lbl">CPU</div><div class="led-pct" id="lv0">—</div></div>
+              <div class="led-strip"><div class="led-pip" id="p1a"></div><div class="led-pip" id="p1b"></div><div class="led-lbl">RAM</div><div class="led-pct" id="lv1">—</div></div>
+            </div>
+            <div class="usb-c"><i></i></div>
+            <div class="usb-c"><i></i></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div class="led-strip"><div class="led-pip" id="p2a"></div><div class="led-pip" id="p2b"></div><div class="led-lbl">GPU</div><div class="led-pct" id="lv2">—</div></div>
+              <div class="led-strip"><div class="led-pip" id="p3a"></div><div class="led-pip" id="p3b"></div><div class="led-lbl">SSD</div><div class="led-pct" id="lv3">—</div></div>
+            </div>
+          </div>
+          <div class="pots-row" id="potsRow"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VIEW MÉTRIQUES ── -->
+    <div class="view" id="v-metrics">
+      <div class="metrics-view">
+        <div class="mc-grid">
+          <!-- CPU -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" id="d-cpu" style="background:var(--blue)"></div><span class="mc-title">CPU</span><span class="mc-val" id="v-cpu" style="color:var(--blue)">—</span></div>
+            <div class="mc-bar"><div class="mc-fill" id="b-cpu" style="background:var(--blue)"></div></div>
+            <div class="mc-grid2">
+              <div class="mc-row"><span class="mc-k">Fréquence</span><span class="mc-v" id="dc-freq">—</span></div>
+              <div class="mc-row"><span class="mc-k">Cœurs</span><span class="mc-v" id="dc-cores">—</span></div>
+              <div class="mc-row"><span class="mc-k">Température</span><span class="mc-v" id="dc-temp">—</span></div>
+              <div class="mc-row"><span class="mc-k">Uptime</span><span class="mc-v" id="dc-uptime">—</span></div>
+            </div>
+          </div>
+          <!-- RAM -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" id="d-ram" style="background:var(--green)"></div><span class="mc-title">RAM</span><span class="mc-val" id="v-ram" style="color:var(--green)">—</span></div>
+            <div class="mc-bar"><div class="mc-fill" id="b-ram" style="background:var(--green)"></div></div>
+            <div class="mc-grid2">
+              <div class="mc-row"><span class="mc-k">Utilisée</span><span class="mc-v" id="dr-used">—</span></div>
+              <div class="mc-row"><span class="mc-k">Totale</span><span class="mc-v" id="dr-total">—</span></div>
+              <div class="mc-row"><span class="mc-k">Libre</span><span class="mc-v" id="dr-free">—</span></div>
+            </div>
+          </div>
+          <!-- GPU -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" id="d-gpu" style="background:var(--purple)"></div><span class="mc-title">GPU</span><span class="mc-val" id="v-gpu" style="color:var(--purple)">—</span></div>
+            <div class="mc-bar"><div class="mc-fill" id="b-gpu" style="background:var(--purple)"></div></div>
+            <div class="mc-grid2">
+              <div class="mc-row"><span class="mc-k">Nom</span><span class="mc-v" id="dg-name" style="font-size:9px">—</span></div>
+              <div class="mc-row"><span class="mc-k">VRAM</span><span class="mc-v" id="dg-vram">—</span></div>
+              <div class="mc-row"><span class="mc-k">Température</span><span class="mc-v" id="dg-temp">—</span></div>
+            </div>
+          </div>
+          <!-- SSD -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" id="d-ssd" style="background:var(--yellow)"></div><span class="mc-title">Stockage</span><span class="mc-val" id="v-ssd" style="color:var(--yellow)">—</span></div>
+            <div class="mc-bar"><div class="mc-fill" id="b-ssd" style="background:var(--yellow)"></div></div>
+            <div id="disk-list"></div>
+          </div>
+          <!-- Réseau -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" style="background:var(--orange)"></div><span class="mc-title">Réseau</span><span class="mc-val" id="v-net" style="color:var(--orange)">—</span></div>
+            <div class="mc-bar"><div class="mc-fill" id="b-net" style="background:var(--orange)"></div></div>
+            <div class="mc-grid2">
+              <div class="mc-row"><span class="mc-k">↑ Upload</span><span class="mc-v" id="dn-up">—</span></div>
+              <div class="mc-row"><span class="mc-k">↓ Download</span><span class="mc-v" id="dn-down">—</span></div>
+            </div>
+          </div>
+          <!-- Système -->
+          <div class="mc">
+            <div class="mc-hdr"><div class="mc-dot" style="background:var(--accent)"></div><span class="mc-title">Système</span><span class="mc-val" id="sys-clock" style="color:var(--text2);font-size:14px">—</span></div>
+            <div class="mc-grid2" style="margin-bottom:10px">
+              <div class="mc-row"><span class="mc-k">Date</span><span class="mc-v" id="sys-date">—</span></div>
+              <div class="mc-row"><span class="mc-k">Uptime</span><span class="mc-v" id="sys-up">—</span></div>
+              <div class="mc-row"><span class="mc-k">Volume</span><span class="mc-v" id="sys-vol">—</span></div>
+              <div class="mc-row"><span class="mc-k">Mute</span><span class="mc-v" id="sys-mute">—</span></div>
+            </div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Top processus</div>
+            <div style="display:flex;gap:4px;font-size:9px;color:var(--text3);margin-bottom:3px">
+              <span style="flex:1">Processus</span><span style="width:34px;text-align:right;color:var(--blue)">CPU</span><span style="width:34px;text-align:right;color:var(--purple)">MEM</span>
+            </div>
+            <div id="proc-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VIEW PROFILS ── -->
+    <div class="view" id="v-profiles">
+      <div class="profiles-view">
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px">Gestion des profils</div>
+        <button class="new-profile-btn" onclick="createProfile()">＋ Nouveau profil</button>
+        <div class="profiles-grid" id="profilesGrid"></div>
+      </div>
+    </div>
+
+    <!-- ── VIEW SERIAL ── -->
+    <div class="view" id="v-serial">
+      <div class="serial-view">
+        <div class="serial-bar">
+          <div class="s-dot" id="sDot"></div>
+          <span class="serial-title">SERIAL LOG</span>
+          <div class="vdiv" style="margin:0 6px"></div>
+          <div class="fpills">
+            <button class="fp active" onclick="setF('all',this)">Tout</button>
+            <button class="fp" onclick="setF('press',this)">Press</button>
+            <button class="fp" onclick="setF('long_press',this)">Long</button>
+            <button class="fp" onclick="setF('double_click',this)">Double</button>
+            <button class="fp" onclick="setF('pot',this)">Pot</button>
+            <button class="fp" onclick="setF('led',this)">LED</button>
+            <button class="fp" onclick="setF('sys',this)">Sys</button>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+            <label style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="autoScroll" checked style="accent-color:var(--accent)"> Auto</label>
+            <button class="fp" onclick="clearLog()">🗑 Vider</button>
+            <button class="fp" onclick="exportLog()">↗ Export</button>
+          </div>
+        </div>
+        <div class="serial-log" id="serialLog"></div>
+      </div>
+    </div>
+
+    <!-- ── VIEW SETTINGS ── -->
+    <div class="view" id="v-settings">
+      <div class="settings-view">
+        <div class="settings-inner">
+          <div class="settings-title">Paramètres</div>
+          <div class="grp">
+            <div class="grp-lbl">Thème</div>
+            <select class="sel" onchange="applyTheme(this.value)" id="themeSel">
+              <option value="dark">Sombre</option>
+              <option value="light">Clair</option>
+            </select>
+          </div>
+          <div class="grp">
+            <div class="grp-lbl">Port Série</div>
+            <div style="display:flex;gap:6px">
+              <input class="inp" id="serialPortInput" value="AUTO" style="flex:1">
+              <button class="tbtn" onclick="refreshPorts()">🔄 Détecter</button>
+              <button class="tbtn" onclick="connectSerial()">⚡ Connecter</button>
+            </div>
+            <div id="portsList" style="margin-top:5px;font-size:10px;color:var(--text3)"></div>
+          </div>
+          <div class="sep"></div>
+          <div style="font-size:11px;color:var(--text3)">MacroDeck v15.1 — Console invisible — WebSocket :8765 — HTTP :8766</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DRAWER BOUTON ── -->
+<div class="drawer-overlay" id="btnDrawerOv" onclick="closeDrawer('btn')"></div>
+<div class="drawer" id="btnDrawer">
+  <div class="drawer-hdr">
+    <span class="drawer-title" id="btnDrawerTitle">Bouton</span>
+    <button class="drawer-close" onclick="closeDrawer('btn')">✕</button>
+  </div>
+  <div class="drawer-body" id="btnDrawerBody"></div>
+</div>
+
+<!-- ── DRAWER POTARD ── -->
+<div class="drawer-overlay" id="potDrawerOv" onclick="closeDrawer('pot')"></div>
+<div class="drawer" id="potDrawer">
+  <div class="drawer-hdr">
+    <span class="drawer-title" id="potDrawerTitle">Potard</span>
+    <button class="drawer-close" onclick="closeDrawer('pot')">✕</button>
+  </div>
+  <div class="drawer-body" id="potDrawerBody"></div>
+</div>
+
+<!-- ── MODAL ACTION ── -->
+<div class="modal-ov" id="actionModal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-t">Ajouter une action</span>
+      <button class="modal-x" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input class="act-search" id="actSearch" placeholder="🔍 Rechercher..." oninput="filterActs(this.value)">
+      <div class="act-cats" id="actCats"></div>
+      <div class="act-list" id="actList"></div>
+      <div id="actParams" style="display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="tbtn" onclick="closeModal()">Annuler</button>
+      <button class="tbtn pr" onclick="confirmAction()">✓ Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CATALOGUE D'ACTIONS
+// ═══════════════════════════════════════════════════════════════
+const ACTS = [
+  // Profils
+  {cat:"Profils",icon:"◈",type:"switch_profile",name:"Aller sur un profil",desc:"Bascule vers un profil spécifique",
+   params:[{key:"profile",lbl:"Clé profil",ph:"obs, discord..."}]},
+  {cat:"Profils",icon:"›",type:"next_profile",name:"Profil suivant",desc:"Passe au profil suivant",params:[]},
+  {cat:"Profils",icon:"‹",type:"prev_profile",name:"Profil précédent",desc:"Revient au profil précédent",params:[]},
+  // PC
+  {cat:"PC",icon:"🚀",type:"open_app",name:"Ouvrir une application",desc:"Lance un logiciel",
+   params:[{key:"path",lbl:"Chemin",ph:"C:\\app.exe",special:"app_picker"}]},
+  {cat:"PC",icon:"✖",type:"close_app",name:"Fermer une application",desc:"Termine un processus",
+   params:[{key:"name",lbl:"Nom processus",ph:"notepad.exe"}]},
+  {cat:"PC",icon:"🗂",type:"open_folder",name:"Ouvrir un dossier",desc:"Explorateur",
+   params:[{key:"path",lbl:"Chemin",ph:"C:\\Users\\..."}]},
+  {cat:"PC",icon:"🌐",type:"open_url",name:"Ouvrir une URL",desc:"Dans le navigateur",
+   params:[{key:"url",lbl:"URL",ph:"https://..."}]},
+  {cat:"PC",icon:"🔒",type:"lock_session",name:"Verrouiller",desc:"Win+L",params:[]},
+  {cat:"PC",icon:"⏻",type:"shutdown",name:"Éteindre le PC",desc:"shutdown /s /t 0",params:[]},
+  {cat:"PC",icon:"🔄",type:"restart",name:"Redémarrer",desc:"shutdown /r /t 0",params:[]},
+  {cat:"PC",icon:"💤",type:"sleep",name:"Veille",desc:"Mode veille",params:[]},
+  {cat:"PC",icon:"🚪",type:"logoff",name:"Déconnecter",desc:"shutdown /l",params:[]},
+  {cat:"PC",icon:"⌨",type:"run_command",name:"Commande terminal",desc:"CMD sans fenêtre",
+   params:[{key:"command",lbl:"Commande",ph:"cmd /c ..."}]},
+  {cat:"PC",icon:"⚡",type:"script_powershell",name:"Script PowerShell",desc:"Code PS inline",
+   params:[{key:"code",lbl:"Code",ph:"Get-Process ..."}]},
+  {cat:"PC",icon:"🐍",type:"script_python",name:"Script Python",desc:"Code Python inline",
+   params:[{key:"code",lbl:"Code",ph:"import os; ..."}]},
+  {cat:"PC",icon:"📜",type:"script_batch",name:"Script Batch",desc:"Commandes .bat",
+   params:[{key:"code",lbl:"Commandes",ph:"@echo off\n..."}]},
+  {cat:"PC",icon:"🧹",type:"clean_temp",name:"Nettoyer Temp",desc:"Vide %TEMP%",params:[]},
+  {cat:"PC",icon:"📸",type:"screenshot",name:"Capture écran",desc:"Win+Shift+S",params:[]},
+  {cat:"PC",icon:"💻",type:"win_minimize_all",name:"Réduire tout",desc:"Win+D",params:[]},
+  // Clavier
+  {cat:"Clavier",icon:"⌨",type:"hotkey",name:"Raccourci clavier",desc:"Combinaison de touches",
+   params:[{key:"keys",lbl:"Touches",ph:"ctrl+c / alt+f4 / win+r"}]},
+  {cat:"Clavier",icon:"T",type:"type_text",name:"Saisir du texte",desc:"Tape automatiquement",
+   params:[{key:"text",lbl:"Texte",ph:"Bonjour monde !"}]},
+  {cat:"Clavier",icon:"🔁",type:"key_sequence",name:"Séquence de touches",desc:"Touches enchaînées",
+   params:[{key:"sequence",lbl:"Séquence",ph:"ctrl+a, ctrl+c, ctrl+v"}]},
+  {cat:"Clavier",icon:"🖱",type:"mouse_click",name:"Clic souris",desc:"Clic à position",
+   params:[{key:"button",lbl:"Bouton",ph:"left/right"},{key:"x",lbl:"X",ph:""},{key:"y",lbl:"Y",ph:""}]},
+  {cat:"Clavier",icon:"⬇",type:"mouse_scroll",name:"Molette",desc:"Défilement",
+   params:[{key:"delta",lbl:"Delta",ph:"3"}]},
+  // Audio
+  {cat:"Audio",icon:"🔊",type:"volume_up",name:"Volume +",desc:"Augmente le volume",
+   params:[{key:"step",lbl:"Pas %",ph:"5"}]},
+  {cat:"Audio",icon:"🔉",type:"volume_down",name:"Volume −",desc:"Baisse le volume",
+   params:[{key:"step",lbl:"Pas %",ph:"5"}]},
+  {cat:"Audio",icon:"🔢",type:"volume_set",name:"Volume fixe",desc:"Niveau précis",
+   params:[{key:"value",lbl:"Niveau 0-100",ph:"50"}]},
+  {cat:"Audio",icon:"🔇",type:"mute_toggle",name:"Mute/Unmute",desc:"Bascule le son",params:[]},
+  {cat:"Audio",icon:"⏯",type:"media_play_pause",name:"Play/Pause",desc:"Média",params:[]},
+  {cat:"Audio",icon:"⏭",type:"media_next",name:"Piste suivante",desc:"Track +",params:[]},
+  {cat:"Audio",icon:"⏮",type:"media_prev",name:"Piste précédente",desc:"Track −",params:[]},
+  {cat:"Audio",icon:"⏹",type:"media_stop",name:"Stop",desc:"Arrête la lecture",params:[]},
+  {cat:"Audio",icon:"💡",type:"brightness",name:"Luminosité",desc:"Écran",
+   params:[{key:"value",lbl:"Niveau 0-100",ph:"75"}]},
+  // OBS
+  {cat:"OBS",icon:"🎬",type:"obs_scene",name:"OBS — Changer scène",desc:"Bascule vers une scène",
+   params:[{key:"scene",lbl:"Nom scène",ph:"Gaming"}]},
+  {cat:"OBS",icon:"📡",type:"obs_stream_start",name:"OBS — Démarrer stream",desc:"Lance le stream",params:[]},
+  {cat:"OBS",icon:"⏹",type:"obs_stream_stop",name:"OBS — Arrêter stream",desc:"Stoppe le stream",params:[]},
+  {cat:"OBS",icon:"⏺",type:"obs_record_start",name:"OBS — Démarrer enreg.",desc:"Enregistrement",params:[]},
+  {cat:"OBS",icon:"⏹",type:"obs_record_stop",name:"OBS — Arrêter enreg.",desc:"Stoppe l'enreg.",params:[]},
+  {cat:"OBS",icon:"🎙",type:"obs_mute_toggle",name:"OBS — Mute source",desc:"Mute/unmute",
+   params:[{key:"source",lbl:"Source",ph:"Mic/Aux"}]},
+  // Visio
+  {cat:"Visio",icon:"🎙",type:"zoom_mute",name:"Zoom — Mute",desc:"Alt+A",params:[]},
+  {cat:"Visio",icon:"📹",type:"zoom_camera",name:"Zoom — Caméra",desc:"Alt+V",params:[]},
+  {cat:"Visio",icon:"✋",type:"zoom_hand",name:"Zoom — Lever la main",desc:"Alt+Y",params:[]},
+  {cat:"Visio",icon:"🚪",type:"zoom_leave",name:"Zoom — Quitter",desc:"Alt+Q",params:[]},
+  {cat:"Visio",icon:"🎙",type:"teams_mute",name:"Teams — Mute",desc:"Ctrl+Shift+M",params:[]},
+  {cat:"Visio",icon:"📹",type:"teams_camera",name:"Teams — Caméra",desc:"Ctrl+Shift+O",params:[]},
+  {cat:"Visio",icon:"🎙",type:"meet_mute",name:"Meet — Mute",desc:"Ctrl+D",params:[]},
+  {cat:"Visio",icon:"🎙",type:"discord_mute",name:"Discord — Mute",desc:"Ctrl+Shift+M",params:[]},
+  {cat:"Visio",icon:"🔕",type:"discord_deafen",name:"Discord — Sourd",desc:"Ctrl+Shift+D",params:[]},
+  // Dev
+  {cat:"Dev",icon:"🆚",type:"vscode_open",name:"Ouvrir VS Code",desc:"Sur un dossier",
+   params:[{key:"path",lbl:"Dossier",ph:"."}]},
+  {cat:"Dev",icon:"⬇",type:"git_pull",name:"Git Pull",desc:"",params:[{key:"folder",lbl:"Dossier",ph:"."}]},
+  {cat:"Dev",icon:"⬆",type:"git_push",name:"Git Push",desc:"add+commit+push",
+   params:[{key:"folder",lbl:"Dossier",ph:"."},{key:"message",lbl:"Message",ph:"commit"}]},
+  {cat:"Dev",icon:"📝",type:"git_commit",name:"Git Commit",desc:"add+commit",
+   params:[{key:"folder",lbl:"Dossier",ph:"."},{key:"message",lbl:"Message",ph:"commit"}]},
+  {cat:"Dev",icon:"🐳",type:"docker_start",name:"Docker Start",desc:"",params:[{key:"name",lbl:"Conteneur",ph:"my-app"}]},
+  {cat:"Dev",icon:"🐳",type:"docker_stop",name:"Docker Stop",desc:"",params:[{key:"name",lbl:"Conteneur",ph:"my-app"}]},
+  {cat:"Dev",icon:"🖥",type:"ssh",name:"SSH",desc:"Terminal SSH",params:[{key:"host",lbl:"Hôte",ph:"192.168.1.1"},{key:"user",lbl:"User",ph:"root"}]},
+  // Web/IA
+  {cat:"Web",icon:"🤖",type:"open_chatgpt",name:"Ouvrir ChatGPT",desc:"",params:[]},
+  {cat:"Web",icon:"📧",type:"google_gmail",name:"Ouvrir Gmail",desc:"",params:[]},
+  {cat:"Web",icon:"📹",type:"google_meet",name:"Nouvelle réunion Meet",desc:"",params:[]},
+  {cat:"Web",icon:"🌐",type:"open_url",name:"Ouvrir une URL",desc:"",params:[{key:"url",lbl:"URL",ph:"https://..."}]},
+  // Temps
+  {cat:"Temps",icon:"⏱",type:"timer",name:"Timer",desc:"Alerte popup",
+   params:[{key:"seconds",lbl:"Secondes",ph:"60"},{key:"label",lbl:"Message",ph:"Terminé !"}]},
+  {cat:"Temps",icon:"🍅",type:"pomodoro",name:"Pomodoro 25min",desc:"",params:[]},
+  // Réseau
+  {cat:"Réseau",icon:"📡",type:"ping",name:"Ping",desc:"Terminal",params:[{key:"host",lbl:"Hôte",ph:"8.8.8.8"}]},
+  // Auto
+  {cat:"Auto",icon:"⏳",type:"delay",name:"Délai",desc:"Pause entre actions",params:[{key:"ms",lbl:"Millisecondes",ph:"500"}]},
+  {cat:"Auto",icon:"🔗",type:"multi_action",name:"Multi-actions",desc:"Séquence d'actions",params:[{key:"delay",lbl:"Délai entre (ms)",ph:"100"}]},
+  {cat:"Auto",icon:"🌐",type:"api_call",name:"Appel API REST",desc:"Requête HTTP",
+   params:[{key:"url",lbl:"URL",ph:"https://api.exemple.com"},{key:"method",lbl:"Méthode",ph:"GET"}]},
+  {cat:"Auto",icon:"🪝",type:"webhook",name:"Webhook",desc:"Zapier, Make, n8n...",
+   params:[{key:"url",lbl:"URL Webhook",ph:"https://hooks.zapier.com/..."}]},
+  {cat:"Auto",icon:"🏠",type:"home_assistant",name:"Home Assistant",desc:"Service HA",
+   params:[{key:"ha_url",lbl:"URL HA",ph:"http://homeassistant.local:8123"},{key:"token",lbl:"Token",ph:"eyJ..."},{key:"service",lbl:"Service",ph:"light.turn_on"},{key:"entity_id",lbl:"Entity",ph:"light.bureau"}]},
+];
+
+const ALL_CATS = ["Tous",...new Set(ACTS.map(a=>a.cat))];
+
+// ═══════════════════════════════════════════════════════════════
+// ÉTAT
+// ═══════════════════════════════════════════════════════════════
+let cfg = {
+  profiles:{
+    default:{name:"Global",app_trigger:"",buttons:{},pots:{}},
+  },
+  active_profile:"default",
+  theme:"dark"
+};
+let activeProfile = "default";
+let selBtnIdx = null, selPotIdx = null, evType = "press";
+let potAngles = [220,220,220,220];
+let metrics = {};
+let logs = [], logFilter = "all";
+let ws = null, theme = "dark";
+let installedApps = [], appsLoaded = false;
+let modalBtnIdx = null, selActType = null, selActObj = null, activeCat = "Tous";
+
+// Données par défaut des boutons/pots
+const DEFAULT_BTNS = [
+  {icon:"🎬",label:"OBS Scène"},{icon:"🎙",label:"Mute Discord"},
+  {icon:"⏯",label:"Play/Pause"},{icon:"📸",label:"Screenshot"},
+  {icon:"🔊",label:"Volume +"},{icon:"🔉",label:"Volume −"},
+  {icon:"🆚",label:"VS Code"},{icon:"⚡",label:"PowerShell"},
+];
+const DEFAULT_POTS = [
+  {name:"Volume sys",action:"volume_system"},
+  {name:"Vol. App",action:"volume_app"},
+  {name:"Luminosité",action:"brightness"},
+  {name:"Custom",action:"custom"},
+];
+
+function getActiveProfileData() {
+  return cfg.profiles[activeProfile] || cfg.profiles["default"];
+}
+function getBtnData(i) {
+  const p = getActiveProfileData();
+  return p.buttons?.[i] || {icon: DEFAULT_BTNS[i]?.icon||"⭐", label: DEFAULT_BTNS[i]?.label||"Btn "+(i+1), press:[], long_press:[], double_click:[]};
+}
+function getPotData(i) {
+  const p = getActiveProfileData();
+  return p.pots?.[i] || DEFAULT_POTS[i] || {name:"Pot "+(i+1),action:"custom"};
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEBSOCKET
+// ═══════════════════════════════════════════════════════════════
+function connectWS() {
+  try {
+    ws = new WebSocket("ws://localhost:8765");
+    ws.onopen = () => { setWS(true); sysLog("Backend connecté"); };
+    ws.onclose = () => { setWS(false); sysLog("Backend déconnecté — reconnexion..."); setTimeout(connectWS,3000); };
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if(m.type==="config") { cfg = m.data; activeProfile = cfg.active_profile||"default"; syncFromConfig(); }
+      if(m.type==="metrics") { metrics = m.data; updateMetrics(); updateMetricsView(); }
+      if(m.type==="button_event") { flashBtn(m.button); addLog("rx",m.event||"press",`BTN${m.button+1}`); }
+      if(m.type==="pot_event") { animatePot(m.pot,m.value); addLog("rx","pot",`POT${m.pot+1} ${m.value}%`); }
+      if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); toast("Profil : "+getProfileName(m.profile)); }
+      if(m.type==="apps") { installedApps = m.data; appsLoaded = true; renderAppPicker(); }
+      if(m.type==="ports") { renderPorts(m.data); }
+    };
+    ws.onerror = () => {};
+  } catch(e) {}
+}
+function setWS(ok) {
+  document.getElementById("wsDot").className="st-dot"+(ok?" ok":"");
+  document.getElementById("wsLbl").textContent = ok?"Connecté":"Déconnecté";
+  document.getElementById("sDot").className="s-dot"+(ok?" live":"");
+}
+function wsSend(obj) { if(ws&&ws.readyState===1) ws.send(JSON.stringify(obj)); }
+connectWS();
+
+// ═══════════════════════════════════════════════════════════════
+// AUTOSAVE — sauvegarde automatiquement la config côté backend
+// (et donc sur disque ~/.macrodeck/config.json) à chaque modif,
+// avec un debounce pour ne pas spammer le serveur à chaque frappe.
+// Ainsi, tout reste en mémoire après un reboot sans devoir cliquer
+// manuellement sur "Enregistrer".
+// ═══════════════════════════════════════════════════════════════
+let _autosaveTimer = null;
+function markDirty() {
+  clearTimeout(_autosaveTimer);
+  _autosaveTimer = setTimeout(() => {
+    cfg.theme = theme;
+    wsSend({type:"save_config", data: cfg});
+    localStorage.setItem("md_cfg", JSON.stringify(cfg));
+    const dot = document.getElementById("autosaveDot");
+    if(dot){ dot.classList.add("flash"); setTimeout(()=>dot.classList.remove("flash"),600); }
+  }, 800);
+}
+// Sauvegarde immédiate forcée avant fermeture/rechargement de la page,
+// pour ne jamais perdre la dernière modification en cours.
+window.addEventListener("beforeunload", () => {
+  if(ws && ws.readyState===1) {
+    cfg.theme = theme;
+    ws.send(JSON.stringify({type:"save_config", data: cfg}));
+  }
+  localStorage.setItem("md_cfg", JSON.stringify(cfg));
+});
+
+// Simulation si pas de backend
+let _sc=35,_sr=60,_sg=20,_sn=3;
+setInterval(()=>{
+  if(ws&&ws.readyState===1) return;
+  _sc=Math.max(2,Math.min(98,_sc+(Math.random()-.47)*8));
+  _sr=Math.max(20,Math.min(94,_sr+(Math.random()-.5)*2));
+  _sg=Math.max(0,Math.min(99,_sg+(Math.random()-.5)*12));
+  _sn=Math.max(0,Math.min(100,_sn+(Math.random()-.4)*15));
+  const t=new Date();
+  metrics={cpu:_sc,ram:_sr,gpu_usage:_sg,ssd_usage:74,net_down:_sn*8,net_up:_sn*3,
+    cpu_temp:52+(_sc*.3),gpu_temp:48+(_sg*.3),gpu_name:"RTX 4070",gpu_vram:35,
+    ram_used_gb:+(_sr*32/100).toFixed(1),ram_total_gb:32,
+    uptime:"03:14:22",time:t.toTimeString().slice(0,8),date:t.toLocaleDateString("fr"),
+    volume:65,muted:false,
+    disks:[{mountpoint:"C:\\",total_gb:500,used_gb:220,percent:44},{mountpoint:"D:\\",total_gb:2000,used_gb:800,percent:40}],
+    top_processes:[{name:"chrome.exe",cpu:_sc*.25,mem:7},{name:"python.exe",cpu:_sc*.15,mem:2},{name:"vscode.exe",cpu:_sc*.1,mem:4}]};
+  updateMetrics(); updateMetricsView();
+},1000);
+
+// ═══════════════════════════════════════════════════════════════
+// SYNC CONFIG
+// ═══════════════════════════════════════════════════════════════
+function syncFromConfig() {
+  activeProfile = cfg.active_profile||"default";
+  syncProfile();
+  renderProfiles();
+}
+function syncProfile() {
+  const p = getActiveProfileData();
+  document.getElementById("activeProfileName").textContent = p.name || activeProfile;
+  buildBtns();
+  buildPots();
+  if(selBtnIdx!==null) openBtnDrawer(selBtnIdx);
+}
+function getProfileName(key) {
+  return cfg.profiles[key]?.name || key;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BOUTONS
+// ═══════════════════════════════════════════════════════════════
+function buildBtns() {
+  const g = document.getElementById("btnGrid"); g.innerHTML="";
+  for(let i=0;i<8;i++) {
+    const b = getBtnData(i);
+    const acts = (b[evType]||[]).length;
+    const d = document.createElement("div");
+    d.className="hw-btn"+(selBtnIdx===i?" selected":"");
+    d.id="hwb-"+i;
+    d.innerHTML=`<div class="btn-num">${i+1}</div>${acts?`<div class="btn-cnt">${acts}</div>`:""}<div class="btn-ic">${b.icon||"⭐"}</div><div class="btn-nm">${b.label||"Btn "+(i+1)}</div><div class="btn-bar"></div>`;
+    d.onclick = () => { selBtnIdx=i; selPotIdx=null; buildBtns(); openBtnDrawer(i); };
+    d.addEventListener("contextmenu",e=>{e.preventDefault();pressBtn(i,"double_click");});
+    d.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();pressBtn(i,"long_press");}});
+    g.appendChild(d);
+  }
+}
+function pressBtn(i,ev) {
+  const el=document.getElementById("hwb-"+i);
+  if(el){el.classList.add("pressed");setTimeout(()=>el.classList.remove("pressed"),180);}
+  addLog("rx",ev,`BTN${i+1}`);
+  const acts = getBtnData(i)[ev]||[];
+  if(acts.length) wsSend({type:"test_action",actions:acts});
+  toast(`BTN${i+1} [${ev}] → ${acts.length} action(s)`);
+}
+function flashBtn(i) { const el=document.getElementById("hwb-"+i); if(el){el.classList.add("pressed");setTimeout(()=>el.classList.remove("pressed"),180);} }
+
+// ═══════════════════════════════════════════════════════════════
+// POTARDS
+// ═══════════════════════════════════════════════════════════════
+function buildPots() {
+  const row=document.getElementById("potsRow"); row.innerHTML="";
+  for(let i=0;i<4;i++) {
+    const p=getPotData(i);
+    const d=document.createElement("div"); d.className="hw-pot";
+    d.innerHTML=`<svg viewBox="0 0 54 54" width="54" height="54" style="overflow:visible;cursor:ns-resize">
+      <defs><radialGradient id="kg${i}" cx="38%" cy="32%"><stop offset="0%" stop-color="#252837"/><stop offset="100%" stop-color="#0c0d10"/></radialGradient></defs>
+      <circle cx="27" cy="27" r="25" fill="url(#kg${i})" stroke="#ffffff08" stroke-width="1"/>
+      <circle cx="27" cy="27" r="21" fill="#07080b" stroke="#ffffff05" stroke-width="1"/>
+      <path id="ka${i}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+      <line id="kl${i}" x1="27" y1="27" x2="27" y2="7" stroke="#818cf8" stroke-width="2" stroke-linecap="round" transform="rotate(220,27,27)"/>
+      <circle cx="27" cy="27" r="2.5" fill="var(--accent)"/>
+    </svg>
+    <div class="pot-lbl">${p.name||"Pot "+(i+1)}</div>
+    <div class="pot-val" id="pv${i}">0%</div>`;
+    d.addEventListener("wheel",e=>{e.preventDefault();turnPot(i,e.deltaY>0?-4:4);},{passive:false});
+    let drag=false,sy=0,sa=0;
+    d.addEventListener("mousedown",e=>{drag=true;sy=e.clientY;sa=potAngles[i];});
+    const mv=e=>{if(!drag)return;potAngles[i]=Math.max(220,Math.min(490,sa+(sy-e.clientY)*1.4));updateKnob(i);addLog("rx","pot",`POT${i+1} ${getPct(i)}%`);};
+    const mu=()=>{if(drag){drag=false;if(selPotIdx===i)openPotDrawer(i);}};
+    window.addEventListener("mousemove",mv);
+    window.addEventListener("mouseup",mu);
+    d.onclick=()=>{selPotIdx=i;selBtnIdx=null;buildBtns();openPotDrawer(i);};
+    row.appendChild(d);
+    updateKnob(i);
+  }
+}
+function turnPot(i,d){potAngles[i]=Math.max(220,Math.min(490,potAngles[i]+d));updateKnob(i);toast(`POT${i+1} → ${getPct(i)}%`);}
+function animatePot(i,pct){potAngles[i]=220+(pct/100)*270;updateKnob(i);}
+function getPct(i){return Math.round((potAngles[i]-220)/270*100);}
+function updateKnob(i){
+  const kl=document.getElementById("kl"+i),ka=document.getElementById("ka"+i);
+  if(kl) kl.setAttribute("transform",`rotate(${potAngles[i]},27,27)`);
+  if(ka){
+    const pct=(potAngles[i]-220)/270,r=21,cx=27,cy=27;
+    const s=(220-90)*Math.PI/180,en=s+pct*270*Math.PI/180;
+    const x1=cx+r*Math.cos(s),y1=cy+r*Math.sin(s),x2=cx+r*Math.cos(en),y2=cy+r*Math.sin(en);
+    ka.setAttribute("d",`M${x1},${y1} A${r},${r} 0 ${pct*270>180?1:0} 1 ${x2},${y2}`);
+  }
+  const pv=document.getElementById("pv"+i); if(pv) pv.textContent=getPct(i)+"%";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRAWERS
+// ═══════════════════════════════════════════════════════════════
+function openBtnDrawer(i) {
+  selBtnIdx=i;
+  const b=getBtnData(i);
+  document.getElementById("btnDrawerTitle").textContent=`Bouton ${i+1} — ${b.label||""}`;
+  renderBtnDrawer(i);
+  document.getElementById("btnDrawerOv").classList.add("open");
+  document.getElementById("btnDrawer").classList.add("open");
+}
+function openPotDrawer(i) {
+  selPotIdx=i;
+  const p=getPotData(i);
+  document.getElementById("potDrawerTitle").textContent=`Potard ${i+1} — ${p.name||""}`;
+  renderPotDrawer(i);
+  document.getElementById("potDrawerOv").classList.add("open");
+  document.getElementById("potDrawer").classList.add("open");
+}
+function closeDrawer(which) {
+  document.getElementById(which+"DrawerOv").classList.remove("open");
+  document.getElementById(which+"Drawer").classList.remove("open");
+  if(which==="btn"&&selBtnIdx!==null){selBtnIdx=null;buildBtns();}
+  if(which==="pot"&&selPotIdx!==null){selPotIdx=null;buildPots();}
+}
+
+function renderBtnDrawer(i) {
+  const b=getBtnData(i);
+  const acts=b[evType]||[];
+  document.getElementById("btnDrawerBody").innerHTML=`
+    <div class="d-tabs">
+      <button class="d-tab ${evType==="press"?"active":""}" onclick="setEv('press',${i})">Simple</button>
+      <button class="d-tab ${evType==="long_press"?"active":""}" onclick="setEv('long_press',${i})">Long</button>
+      <button class="d-tab ${evType==="double_click"?"active":""}" onclick="setEv('double_click',${i})">Double</button>
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Icône</div>
+      <input class="inp" style="width:46px;font-size:16px;text-align:center" value="${b.icon||"⭐"}" oninput="setBtnField(${i},'icon',this.value)">
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Nom</div>
+      <input class="inp" value="${b.label||""}" oninput="setBtnField(${i},'label',this.value)">
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Actions — ${evType}</div>
+      <div class="chips" id="chips-${i}">${acts.map((a,j)=>`<span class="chip">${actLabel(a)}<span class="chip-x" onclick="delAct(${i},${j})">✕</span></span>`).join("")}</div>
+      <button class="add-btn" onclick="openModal(${i})">+ Ajouter une action</button>
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Tester</div>
+      <div class="test-row">
+        <button class="test-btn" onclick="pressBtn(${i},'press')">▶ Simple</button>
+        <button class="test-btn" onclick="pressBtn(${i},'long_press')">⏳ Long</button>
+        <button class="test-btn" onclick="pressBtn(${i},'double_click')">⚡ Double</button>
+      </div>
+    </div>
+    <div class="sep"></div>
+    ${metricsHtml()}`;
+}
+
+function renderPotDrawer(i) {
+  const p=getPotData(i), pct=getPct(i);
+  document.getElementById("potDrawerBody").innerHTML=`
+    <div class="grp">
+      <div class="grp-lbl">Nom</div>
+      <input class="inp" value="${p.name||""}" oninput="setPotField(${i},'name',this.value)">
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Action</div>
+      <select class="sel" onchange="setPotField(${i},'action',this.value)">
+        ${["volume_system","volume_app","brightness","scroll","custom"].map(a=>`<option ${p.action===a?"selected":""}>${a}</option>`).join("")}
+      </select>
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Valeur actuelle — <span style="color:var(--accent);font-family:monospace">${pct}%</span></div>
+      <div class="m-bar" style="height:4px;margin:6px 0"><div class="m-fill" style="width:${pct}%;background:var(--accent);height:4px"></div></div>
+      <input type="range" min="0" max="100" value="${pct}" oninput="animatePot(${i},+this.value);renderPotDrawer(${i})">
+    </div>
+    <div class="sep"></div>
+    ${metricsHtml()}`;
+}
+
+function metricsHtml() {
+  const m=metrics;
+  const pairs=[["CPU",m.cpu||0,"var(--blue)"],["RAM",m.ram||0,"var(--green)"],["GPU",m.gpu_usage||0,"var(--purple)"],["SSD",m.ssd_usage||0,"var(--yellow)"]];
+  return `<div class="grp-lbl" style="margin-bottom:8px">Métriques live</div>`+pairs.map(([lbl,v,c])=>`
+    <div class="m-row"><div class="m-lbl">${lbl}</div><div class="m-bar"><div class="m-fill" style="width:${Math.round(v)}%;background:${mCol(v)}"></div></div><div class="m-val" style="color:${mCol(v)}">${Math.round(v)}%</div></div>`).join("");
+}
+
+function setBtnField(i,field,val) {
+  if(!cfg.profiles[activeProfile]) return;
+  if(!cfg.profiles[activeProfile].buttons) cfg.profiles[activeProfile].buttons={};
+  if(!cfg.profiles[activeProfile].buttons[i]) cfg.profiles[activeProfile].buttons[i]={...getBtnData(i)};
+  cfg.profiles[activeProfile].buttons[i][field]=val;
+  buildBtns();
+  markDirty();
+}
+function setPotField(i,field,val) {
+  if(!cfg.profiles[activeProfile]) return;
+  if(!cfg.profiles[activeProfile].pots) cfg.profiles[activeProfile].pots={};
+  if(!cfg.profiles[activeProfile].pots[i]) cfg.profiles[activeProfile].pots[i]={...getPotData(i)};
+  cfg.profiles[activeProfile].pots[i][field]=val;
+  buildPots();
+  markDirty();
+}
+function setEv(t,i){evType=t;renderBtnDrawer(i);}
+function delAct(i,j){
+  if(!cfg.profiles[activeProfile].buttons?.[i]) return;
+  cfg.profiles[activeProfile].buttons[i][evType].splice(j,1);
+  renderBtnDrawer(i); buildBtns();
+  markDirty();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROFILS
+// ═══════════════════════════════════════════════════════════════
+function renderProfiles() {
+  const g=document.getElementById("profilesGrid"); if(!g) return;
+  g.innerHTML=Object.entries(cfg.profiles||{}).map(([key,p])=>`
+    <div class="profile-card ${activeProfile===key?"active":""}" onclick="switchProfile('${key}')">
+      ${activeProfile===key?'<span class="pc-active-badge">Actif</span>':""}
+      <div class="pc-name">${p.name||key}</div>
+      <div class="pc-trigger">${p.app_trigger?"🔗 Déclencheur : "+p.app_trigger:"Pas de déclencheur auto"}</div>
+      <div class="pc-actions">
+        <button class="pc-btn" onclick="event.stopPropagation();renameProfile('${key}')">✏ Renommer</button>
+        <button class="pc-btn" onclick="event.stopPropagation();editTrigger('${key}')">🔗 Trigger</button>
+        ${key!=="default"?`<button class="pc-btn del" onclick="event.stopPropagation();deleteProfile('${key}')">🗑</button>`:""}
+      </div>
+    </div>`).join("");
+}
+function switchProfile(key) {
+  activeProfile=key;
+  cfg.active_profile=key;
+  wsSend({type:"set_profile",profile:key});
+  syncProfile();
+  renderProfiles();
+  toast("Profil actif : "+getProfileName(key));
+}
+function nextProfile() {
+  const keys=Object.keys(cfg.profiles);
+  const idx=(keys.indexOf(activeProfile)+1)%keys.length;
+  switchProfile(keys[idx]);
+}
+function prevProfile() {
+  const keys=Object.keys(cfg.profiles);
+  const idx=(keys.indexOf(activeProfile)-1+keys.length)%keys.length;
+  switchProfile(keys[idx]);
+}
+function createProfile() {
+  const label=prompt("Nom du nouveau profil :","Nouveau profil");
+  if(!label) return;
+  const key=label.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
+  if(cfg.profiles[key]){toast("⚠ Ce profil existe déjà");return;}
+  cfg.profiles[key]={name:label,app_trigger:"",buttons:{},pots:{}};
+  wsSend({type:"create_profile",key,label});
+  renderProfiles();
+  toast("✓ Profil créé : "+label);
+}
+function renameProfile(key) {
+  const cur=cfg.profiles[key]?.name||key;
+  const label=prompt("Nouveau nom :",cur);
+  if(!label) return;
+  cfg.profiles[key].name=label;
+  wsSend({type:"rename_profile",key,label});
+  renderProfiles();
+  syncProfile();
+  toast("✓ Renommé : "+label);
+}
+function editTrigger(key) {
+  const cur=cfg.profiles[key]?.app_trigger||"";
+  const val=prompt("Application déclencheuse (nom du processus) :",cur);
+  if(val===null) return;
+  cfg.profiles[key].app_trigger=val;
+  markDirty();
+  renderProfiles();
+}
+function deleteProfile(key) {
+  if(!confirm(`Supprimer le profil "${cfg.profiles[key]?.name||key}" ?`)) return;
+  wsSend({type:"delete_profile",key});
+  delete cfg.profiles[key];
+  if(activeProfile===key) switchProfile("default");
+  renderProfiles();
+  toast("🗑 Profil supprimé");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MÉTRIQUES
+// ═══════════════════════════════════════════════════════════════
+function mCol(p){return p<50?"var(--green)":p<80?"var(--yellow)":"var(--red)";}
+function ledCol(p){return p<50?{bg:"var(--green)",sh:"#22c55e50"}:p<80?{bg:"var(--yellow)",sh:"#eab30850"}:{bg:"var(--red)",sh:"#ef444460"};}
+function st(id,v){const el=document.getElementById(id);if(el) el.textContent=v??"";}
+
+function updateMetrics() {
+  const m=metrics;
+  [[0,m.cpu],[1,m.ram],[2,m.gpu_usage],[3,m.ssd_usage]].forEach(([i,v])=>{
+    const p=Math.round(v||0),c=ledCol(p);
+    ["a","b"].forEach(s=>{const el=document.getElementById("p"+i+s);if(el){el.style.background=c.bg;el.style.boxShadow=`0 0 7px ${c.sh}`;}});
+    const lv=document.getElementById("lv"+i);if(lv){lv.textContent=p+"%";lv.style.color=c.bg;}
+  });
+}
+function updateMetricsView() {
+  const m=metrics;
+  function setCard(id,pct,color){
+    const p=Math.round(pct||0),c=mCol(p);
+    const dot=document.getElementById("d-"+id),val=document.getElementById("v-"+id),bar=document.getElementById("b-"+id);
+    if(dot){dot.style.background=c;dot.style.boxShadow=`0 0 7px ${c}50`;}
+    if(val) val.textContent=p+"%";
+    if(bar){bar.style.width=p+"%";bar.style.background=c;}
+  }
+  setCard("cpu",m.cpu); st("dc-freq",(m.cpu_freq?m.cpu_freq.toFixed(0)+" MHz":"—")); st("dc-cores",m.cpu_cores||"—"); st("dc-temp",m.cpu_temp?m.cpu_temp+"°C":"—"); st("dc-uptime",m.uptime||"—");
+  setCard("ram",m.ram); st("dr-used",m.ram_used_gb?m.ram_used_gb+" GB":"—"); st("dr-total",m.ram_total_gb?m.ram_total_gb+" GB":"—"); st("dr-free",m.ram_total_gb&&m.ram_used_gb?(m.ram_total_gb-m.ram_used_gb).toFixed(1)+" GB":"—");
+  setCard("gpu",m.gpu_usage); st("dg-name",m.gpu_name||"—"); st("dg-vram",m.gpu_vram!==undefined?Math.round(m.gpu_vram)+"%":"—"); st("dg-temp",m.gpu_temp?m.gpu_temp+"°C":"—");
+  setCard("ssd",m.ssd_usage);
+  if(m.disks){const dl=document.getElementById("disk-list");if(dl)dl.innerHTML=m.disks.map(d=>`<div class="disk-r"><div class="disk-nm">${d.mountpoint||d.device}</div><div class="disk-b"><div class="disk-f" style="width:${d.percent}%;background:${mCol(d.percent)}"></div></div><div class="disk-i">${d.used_gb}/${d.total_gb}GB</div></div>`).join("");}
+  const netPct=Math.min(100,((m.net_down||0)/1024)*10);
+  setCard("net",netPct);
+  st("dn-up",m.net_up!==undefined?_speed(m.net_up):"—"); st("dn-down",m.net_down!==undefined?_speed(m.net_down):"—");
+  st("sys-clock",m.time||"—"); st("sys-date",m.date||"—"); st("sys-up",m.uptime||"—"); st("sys-vol",m.volume!==undefined?m.volume+"%":"—"); st("sys-mute",m.muted?"🔇 Oui":"Non");
+  const pl=document.getElementById("proc-list");
+  if(pl&&m.top_processes) pl.innerHTML=m.top_processes.map(p=>`<div class="proc-r"><div class="proc-nm">${p.name}</div><div class="proc-c">${p.cpu.toFixed(1)}%</div><div class="proc-m">${p.mem.toFixed(1)}%</div></div>`).join("");
+}
+function _speed(kbs){return kbs<1024?kbs.toFixed(1)+" KB/s":(kbs/1024).toFixed(1)+" MB/s";}
+
+// ═══════════════════════════════════════════════════════════════
+// MODAL ACTION
+// ═══════════════════════════════════════════════════════════════
+function actLabel(a){const f=ACTS.find(x=>x.type===a.type);return f?f.icon+" "+f.name:a.type;}
+
+function openModal(btnIdx) {
+  modalBtnIdx=btnIdx; selActType=null; selActObj=null; activeCat="Tous";
+  document.getElementById("actSearch").value="";
+  document.getElementById("actParams").style.display="none";
+  buildCats(); filterActs("");
+  document.getElementById("actionModal").classList.add("open");
+}
+function closeModal(){document.getElementById("actionModal").classList.remove("open");}
+
+function buildCats(){
+  document.getElementById("actCats").innerHTML=ALL_CATS.map(c=>`<button class="ac ${activeCat===c?"active":""}" onclick="setCat('${c}',this)">${c}</button>`).join("");
+}
+function setCat(c,el){activeCat=c;buildCats();filterActs(document.getElementById("actSearch").value);}
+
+function filterActs(q){
+  const s=q.toLowerCase();
+  const list=ACTS.filter(a=>(activeCat==="Tous"||a.cat===activeCat)&&(!s||a.name.toLowerCase().includes(s)||a.type.includes(s)));
+  document.getElementById("actList").innerHTML=list.map(a=>`
+    <div class="act-item ${selActType===a.type?"sel":""}" onclick="selectAct('${a.type}')">
+      <div class="ai-ic">${a.icon}</div>
+      <div><div class="ai-n">${a.name}</div><div class="ai-d">${a.desc} <span style="color:var(--text3);font-size:9px">[${a.cat}]</span></div></div>
+    </div>`).join("");
+}
+
+function selectAct(type){
+  selActType=type;
+  const act=ACTS.find(a=>a.type===type);
+  selActObj={type,params:{}};
+  filterActs(document.getElementById("actSearch").value);
+  const pd=document.getElementById("actParams");
+  if(!act?.params?.length){pd.style.display="none";return;}
+  pd.style.display="block";
+  pd.innerHTML=`<div class="act-params"><div class="ap-title">Paramètres</div>${act.params.map(p=>{
+    if(p.special==="app_picker") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><div style="flex:1">
+      <input class="p-inp" style="width:100%;margin-bottom:5px" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value">
+      <input class="app-srch" id="appSrch" placeholder="🔍 Filtrer les apps..." oninput="filterAppPicker(this.value)">
+      <div class="app-lst" id="appLst">${appsLoaded?"":"<div style='padding:14px;text-align:center;font-size:11px;color:var(--text3)'>Chargement...</div>"}</div>
+    </div></div>`;
+    return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><input class="p-inp" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value"></div>`;
+  }).join("")}</div>`;
+  if(act.params.some(p=>p.special==="app_picker")){
+    if(appsLoaded) renderAppPicker();
+    else wsSend({type:"get_apps"});
+  }
+}
+
+function renderAppPicker(){
+  const lst=document.getElementById("appLst"); if(!lst) return;
+  lst.innerHTML=installedApps.slice(0,200).map(a=>`<div class="app-e" onclick="pickApp('${a.path.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}','${a.name.replace(/'/g,"\\'")}')"><span class="app-e-nm">${a.name}</span><span class="app-e-tp">${a.type}</span></div>`).join("");
+}
+function filterAppPicker(q){
+  const lst=document.getElementById("appLst"); if(!lst) return;
+  const f=installedApps.filter(a=>a.name.toLowerCase().includes(q.toLowerCase()));
+  lst.innerHTML=f.slice(0,100).map(a=>`<div class="app-e" onclick="pickApp('${a.path.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}','${a.name.replace(/'/g,"\\'")}')"><span class="app-e-nm">${a.name}</span><span class="app-e-tp">${a.type}</span></div>`).join("");
+}
+function pickApp(path,name){
+  const inp=document.getElementById("param_path");if(inp){inp.value=path;if(selActObj) selActObj.params.path=path;}
+  document.querySelectorAll(".app-e").forEach(e=>e.style.background="");
+  toast("✓ "+name);
+}
+
+function confirmAction(){
+  if(!selActObj){toast("⚠ Sélectionnez une action");return;}
+  if(modalBtnIdx===null) return;
+  // Lire les inputs
+  const act=ACTS.find(a=>a.type===selActType);
+  act?.params?.forEach(p=>{
+    const inp=document.getElementById("param_"+p.key);
+    if(inp) selActObj.params[p.key]=inp.value;
+  });
+  // Assurer la structure
+  if(!cfg.profiles[activeProfile].buttons) cfg.profiles[activeProfile].buttons={};
+  const i=modalBtnIdx;
+  if(!cfg.profiles[activeProfile].buttons[i]) cfg.profiles[activeProfile].buttons[i]={...getBtnData(i)};
+  if(!cfg.profiles[activeProfile].buttons[i][evType]) cfg.profiles[activeProfile].buttons[i][evType]=[];
+  cfg.profiles[activeProfile].buttons[i][evType].push({...selActObj});
+  closeModal();
+  renderBtnDrawer(i);
+  buildBtns();
+  markDirty();
+  toast("✓ Action ajoutée : "+actLabel(selActObj));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SERIAL LOG
+// ═══════════════════════════════════════════════════════════════
+function sysLog(msg){addLog("sys","sys",msg);}
+function addLog(dir,type,frm){
+  const t=new Date(),ts=t.toTimeString().slice(0,8)+"."+String(t.getMilliseconds()).padStart(3,"0");
+  logs.push({dir,type,frm,ts});if(logs.length>600) logs.shift();
+  renderLog();
+}
+function renderLog(){
+  const el=document.getElementById("serialLog"); if(!el) return;
+  const f=logFilter==="all"?logs:logs.filter(l=>l.type===logFilter);
+  if(!f.length){el.innerHTML='<div style="padding:10px 14px;color:var(--text3);font-size:11px">Aucune trame</div>';return;}
+  el.innerHTML=f.slice(-100).map(l=>`<div class="log-r"><span class="lt">${l.ts}</span><span class="ld ${l.dir}">${l.dir.toUpperCase()}</span>&nbsp;<span class="ltp ${l.type}">${l.type.replace("_"," ").toUpperCase()}</span><span class="lf">${l.frm}</span></div>`).join("");
+  if(document.getElementById("autoScroll")?.checked) el.scrollTop=el.scrollHeight;
+}
+function setF(f,el){logFilter=f;document.querySelectorAll(".fp").forEach(p=>p.classList.remove("active"));el.classList.add("active");renderLog();}
+function clearLog(){logs=[];renderLog();}
+function exportLog(){
+  const a=document.createElement("a");
+  a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(logs.map(l=>`${l.ts}\t${l.dir}\t${l.type}\t${l.frm}`).join("\n"));
+  a.download="macrodeck_"+Date.now()+".log";a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function switchView(id,btnEl) {
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  const v=document.getElementById("v-"+id); if(v) v.classList.add("active");
+  document.querySelectorAll(".tn-btn").forEach(b=>b.classList.remove("active"));
+  if(btnEl) btnEl.classList.add("active");
+  if(id==="profiles") renderProfiles();
+}
+function sbActive(el){document.querySelectorAll(".sb-btn").forEach(b=>b.classList.remove("active"));el.classList.add("active");}
+
+// ═══════════════════════════════════════════════════════════════
+// THÈME
+// ═══════════════════════════════════════════════════════════════
+function applyTheme(t){
+  theme=t;document.documentElement.setAttribute("data-theme",t);
+  document.getElementById("themeBtn").textContent=t==="dark"?"🌙":"☀️";
+  const s=document.getElementById("themeSel");if(s) s.value=t;
+  localStorage.setItem("md_theme",t);
+}
+function toggleTheme(){applyTheme(theme==="dark"?"light":"dark");}
+applyTheme(localStorage.getItem("md_theme")||"dark");
+
+// ═══════════════════════════════════════════════════════════════
+// SAVE / SETTINGS
+// ═══════════════════════════════════════════════════════════════
+function saveConfig(){
+  cfg.theme=theme;
+  wsSend({type:"save_config",data:cfg});
+  localStorage.setItem("md_cfg",JSON.stringify(cfg));
+  toast("✓ Configuration enregistrée");
+}
+function refreshPorts(){wsSend({type:"get_ports"});}
+function connectSerial(){wsSend({type:"connect_serial",port:document.getElementById("serialPortInput")?.value||"AUTO"});}
+function renderPorts(ports){
+  const el=document.getElementById("portsList");
+  if(el) el.innerHTML=ports.length?ports.map(p=>`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="document.getElementById('serialPortInput').value='${p}'">${p}</span>`).join(" · "):"Aucun port détecté";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+let toastT;
+function toast(msg,d=2400){
+  const el=document.getElementById("toast");
+  el.textContent=msg;el.classList.add("show");
+  clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),d);
+}
+
+// Fermer modals sur overlay
+document.getElementById("actionModal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+// Restaurer config locale si backend absent
+const localCfg=localStorage.getItem("md_cfg");
+if(localCfg){try{cfg=JSON.parse(localCfg);activeProfile=cfg.active_profile||"default";}catch(e){}}
+
+buildBtns();
+buildPots();
+updateMetrics();
+renderProfiles();
+sysLog("MacroDeck v15.1 — ws://localhost:8765");
+</script>
+</body>
+</html>
