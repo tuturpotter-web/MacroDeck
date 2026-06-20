@@ -80,6 +80,11 @@ jobs:
 
             Si une instance tourne déjà, un message d'information s'affiche au lieu d'en relancer une seconde.
 
+            ### Plugins (sans recompiler)
+            Un dossier `plugins/` est créé automatiquement à côté de `MacroDeck.exe`. Pose-y des fichiers `.json`
+            pour ajouter de nouvelles actions (Discord, Home Assistant, n8n, webhooks...), puis clique sur
+            "🔄 Recharger les plugins" dans l'onglet Plugins de l'interface.
+
             ### Dépendances externes (optionnel)
             - [OpenHardwareMonitor](https://openhardwaremonitor.org/) pour les températures CPU/GPU
         env:
