@@ -339,6 +339,16 @@ class ActionEngine:
         except: pass
 
     def _one(self, a: dict):
+        # Le frontend stocke chaque action sous la forme {"type": "...", "params": {...}}.
+        # Tout le dispatch ci-dessous lit ses paramètres directement sur l'objet
+        # (a.get("path"), a.get("url")...), donc on aplatit "params" ici une bonne
+        # fois pour toutes : sans ça, open_url/open_app/open_folder/etc. recevaient
+        # toujours une chaîne vide et semblaient ne "rien faire".
+        if isinstance(a.get("params"), dict):
+            merged = dict(a)
+            merged.update(a["params"])
+            a = merged
+
         t = a.get("type","")
 
         # ── PROFILS ─────────────────────────────────────────────────────────
