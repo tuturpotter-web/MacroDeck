@@ -268,6 +268,33 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 .app-e-nm{font-size:11px;flex:1}
 .app-e-tp{font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace}
 
+.pot-act-list{max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px}
+.pot-act-cat{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin:8px 4px 4px;}
+.pot-act-cat:first-child{margin-top:2px}
+.pot-act-item{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;cursor:pointer;transition:all .12s;border:1px solid transparent}
+.pot-act-item:hover{background:var(--bg3)}
+.pot-act-item.selected{background:var(--accent-dim);border-color:var(--accent-glow)}
+.pot-act-ic{font-size:14px;flex-shrink:0}
+.pot-act-info .n{font-size:11px;font-weight:500;color:var(--text)}
+.pot-act-info .d{font-size:9px;color:var(--text3)}
+.pot-params{background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:10px}
+.picker-list{margin-top:6px}
+.picker-load-btn{width:100%;padding:6px;border-radius:6px;border:1px dashed var(--border2);background:none;color:var(--text3);cursor:pointer;font-size:10px;font-family:'Inter',sans-serif;transition:all .12s}
+.picker-load-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.picker-results{max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;margin-top:6px}
+.picker-row{display:flex;align-items:center;padding:6px 9px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s}
+.picker-row:last-child{border:none}
+.picker-row:hover{background:var(--accent-dim)}
+
+.plugin-card{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:12px}
+.plugin-card-h{display:flex;align-items:center;gap:10px}
+.plugin-ic{font-size:18px;flex-shrink:0}
+.plugin-name{font-size:12px;font-weight:600;color:var(--text)}
+.plugin-file{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.plugin-count{margin-left:auto;font-size:10px;color:var(--accent);background:var(--accent-dim);padding:2px 8px;border-radius:10px;flex-shrink:0}
+.plugin-acts{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.plugin-act-chip{font-size:10px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:3px 8px;border-radius:5px}
+
 /* ── TOAST ── */
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:7px 14px;border-radius:9px;font-size:12px;z-index:9999;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity .18s,transform .18s;box-shadow:0 6px 20px #00000040}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -291,13 +318,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
     <span class="logo-v">V15</span>
   </div>
   <div class="vdiv"></div>
-  <div class="top-nav">
-    <button class="tn-btn active" onclick="switchView('device',this)">🎛 Device</button>
-    <button class="tn-btn" onclick="switchView('metrics',this)">📊 Métriques</button>
-    <button class="tn-btn" onclick="switchView('profiles',this)">◈ Profils</button>
-    <button class="tn-btn" onclick="switchView('serial',this)">⌨ Serial</button>
-    <button class="tn-btn" onclick="switchView('settings',this)">⚙ Paramètres</button>
-  </div>
+  <span id="viewTitle" style="font-size:13px;font-weight:600;color:var(--text2)">Device</span>
   <div class="tb-right">
     <div class="st-pill" title="Sauvegarde automatique active"><div class="st-dot" id="autosaveDot" style="background:var(--text3)"></div><span style="font-size:10px">Auto-save</span></div>
     <div class="st-pill"><div class="st-dot" id="wsDot"></div><span id="wsLbl">Déconnecté</span></div>
@@ -312,6 +333,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
     <button class="sb-btn active" title="Device" onclick="switchView('device',null);sbActive(this)">🎛</button>
     <button class="sb-btn" title="Métriques" onclick="switchView('metrics',null);sbActive(this)">📊</button>
     <button class="sb-btn" title="Profils" onclick="switchView('profiles',null);sbActive(this)">◈</button>
+    <button class="sb-btn" title="Plugins" onclick="switchView('plugins',null);sbActive(this)">🧩</button>
     <div class="sb-sep"></div>
     <button class="sb-btn" title="Serial" onclick="switchView('serial',null);sbActive(this)">⌨</button>
     <button class="sb-btn" title="Paramètres" onclick="switchView('settings',null);sbActive(this)">⚙</button>
@@ -429,6 +451,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
       </div>
     </div>
 
+    <!-- ── VIEW PLUGINS ── -->
+    <div class="view" id="v-plugins">
+      <div class="profiles-view" id="pluginsBody" style="max-width:680px;margin:0 auto;padding:24px"></div>
+    </div>
+
     <!-- ── VIEW SERIAL ── -->
     <div class="view" id="v-serial">
       <div class="serial-view">
@@ -530,7 +557,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 // ═══════════════════════════════════════════════════════════════
 // CATALOGUE D'ACTIONS
 // ═══════════════════════════════════════════════════════════════
-const ACTS = [
+let ACTS = [
   // Profils
   {cat:"Profils",icon:"◈",type:"switch_profile",name:"Aller sur un profil",desc:"Bascule vers un profil spécifique",
    params:[{key:"profile",lbl:"Clé profil",ph:"obs, discord..."}]},
@@ -540,9 +567,11 @@ const ACTS = [
   {cat:"PC",icon:"🚀",type:"open_app",name:"Ouvrir une application",desc:"Lance un logiciel",
    params:[{key:"path",lbl:"Chemin",ph:"C:\\app.exe",special:"app_picker"}]},
   {cat:"PC",icon:"✖",type:"close_app",name:"Fermer une application",desc:"Termine un processus",
-   params:[{key:"name",lbl:"Nom processus",ph:"notepad.exe"}]},
+   params:[{key:"name",lbl:"Nom processus",ph:"notepad.exe",special:"process_picker"}]},
   {cat:"PC",icon:"🗂",type:"open_folder",name:"Ouvrir un dossier",desc:"Explorateur",
-   params:[{key:"path",lbl:"Chemin",ph:"C:\\Users\\..."}]},
+   params:[{key:"path",lbl:"Chemin",ph:"C:\\Users\\...",special:"folder_picker"}]},
+  {cat:"PC",icon:"📄",type:"open_file",name:"Ouvrir un fichier",desc:"Avec son app par défaut",
+   params:[{key:"path",lbl:"Chemin",ph:"C:\\doc.pdf",special:"file_picker"}]},
   {cat:"PC",icon:"🌐",type:"open_url",name:"Ouvrir une URL",desc:"Dans le navigateur",
    params:[{key:"url",lbl:"URL",ph:"https://..."}]},
   {cat:"PC",icon:"🔒",type:"lock_session",name:"Verrouiller",desc:"Win+L",params:[]},
@@ -658,6 +687,7 @@ let logs = [], logFilter = "all";
 let ws = null, theme = "dark";
 let installedApps = [], appsLoaded = false;
 let modalBtnIdx = null, selActType = null, selActObj = null, activeCat = "Tous";
+let pluginCatalog = [], pluginMeta = [];
 
 // Données par défaut des boutons/pots
 const DEFAULT_BTNS = [
@@ -672,6 +702,29 @@ const DEFAULT_POTS = [
   {name:"Luminosité",action:"brightness"},
   {name:"Custom",action:"custom"},
 ];
+
+// Catalogue des actions disponibles pour les potards (molette/rotation 0-100%)
+let POT_ACTS = [
+  {cat:"Audio",icon:"🔊",action:"volume_system",name:"Volume système",desc:"Règle le volume général du PC",params:[]},
+  {cat:"Audio",icon:"🎚",action:"volume_app",name:"Volume d'une application",desc:"Règle le volume d'une app précise (session audio active)",
+   params:[{key:"app",lbl:"Application",ph:"chrome.exe, Spotify...",special:"audio_session_picker"}]},
+  {cat:"Audio",icon:"🎮",action:"game_volume",name:"Volume d'un jeu",desc:"Règle le volume d'un jeu en cours",
+   params:[{key:"app",lbl:"Jeu (processus)",ph:"valorant.exe...",special:"audio_session_picker"}]},
+  {cat:"Audio",icon:"💬",action:"discord_volume",name:"Volume Discord",desc:"Règle le volume de Discord uniquement",params:[]},
+  {cat:"Audio",icon:"🎵",action:"spotify_volume",name:"Volume Spotify",desc:"Règle le volume de Spotify uniquement",params:[]},
+  {cat:"Audio",icon:"🎙",action:"mic_volume",name:"Volume micro (app)",desc:"Règle le volume micro d'une app (ex: Discord)",
+   params:[{key:"app",lbl:"Application",ph:"Discord",special:"audio_session_picker"}]},
+  {cat:"Écran",icon:"💡",action:"brightness",name:"Luminosité écran",desc:"Règle la luminosité de l'écran",params:[]},
+  {cat:"OBS",icon:"🎬",action:"obs_volume",name:"Volume source OBS",desc:"Règle le volume d'une source audio OBS",
+   params:[{key:"source",lbl:"Nom de la source",ph:"Mic/Aux, Desktop Audio..."}]},
+  {cat:"Navigation",icon:"⬇",action:"scroll",name:"Défilement (scroll)",desc:"Fait défiler la page en tournant le potard",params:[]},
+  {cat:"Navigation",icon:"🔍",action:"zoom_level",name:"Zoom (Ctrl+molette)",desc:"Zoom/dézoom dans le navigateur ou un éditeur",params:[]},
+  {cat:"Médias",icon:"⏩",action:"media_seek",name:"Avance/recul média",desc:"Avance ou recule la lecture en cours",params:[]},
+  {cat:"Médias",icon:"🐇",action:"playback_speed",name:"Vitesse de lecture",desc:"Change la vitesse de lecture (VLC/YouTube)",params:[]},
+  {cat:"Avancé",icon:"⚙",action:"custom",name:"Script Python custom",desc:"Exécute du code Python avec la variable 'value' (0-100)",
+   params:[{key:"script",lbl:"Code Python",ph:"# value = niveau du potard (0-100)\nprint(value)"}]},
+];
+function potActDef(action){ return POT_ACTS.find(p=>p.action===action); }
 
 function getActiveProfileData() {
   return cfg.profiles[activeProfile] || cfg.profiles["default"];
@@ -702,6 +755,11 @@ function connectWS() {
       if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); toast("Profil : "+getProfileName(m.profile)); }
       if(m.type==="apps") { installedApps = m.data; appsLoaded = true; renderAppPicker(); }
       if(m.type==="ports") { renderPorts(m.data); }
+      if(m.type==="processes") { renderProcessPicker(m.data); }
+      if(m.type==="audio_sessions") { renderAudioPicker(m.data); }
+      if(m.type==="picked_path") { applyPickedPath(m.field, m.path); }
+      if(m.type==="plugins") { pluginCatalog = m.data; pluginMeta = m.meta||[]; mergePluginActions(); renderPlugins(); }
+      if(m.type==="toast") { toast(m.message); }
     };
     ws.onerror = () => {};
   } catch(e) {}
@@ -713,6 +771,94 @@ function setWS(ok) {
 }
 function wsSend(obj) { if(ws&&ws.readyState===1) ws.send(JSON.stringify(obj)); }
 connectWS();
+setTimeout(()=>wsSend({type:"get_plugins"}), 500);
+
+// ═══════════════════════════════════════════════════════════════
+// PLUGINS — actions ajoutées dynamiquement sans recompiler l'app.
+// Chaque plugin (fichier .json dans le dossier "plugins/" du backend)
+// déclare des actions custom qui apparaissent automatiquement ici,
+// dans le catalogue d'actions des boutons (catégorie "Plugins").
+// ═══════════════════════════════════════════════════════════════
+const ACTS_BASE_COUNT = ACTS.length;
+function mergePluginActions(){
+  // On retire les anciennes actions plugin avant de réinjecter (en cas de reload)
+  ACTS = ACTS.slice(0, ACTS_BASE_COUNT).concat(
+    pluginCatalog.map(a=>({cat:"Plugins",icon:a.icon||"🧩",type:a.type,name:a.name,desc:a.desc,params:a.params||[]}))
+  );
+}
+function renderPlugins(){
+  const el=document.getElementById("pluginsBody");
+  if(!el) return;
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600">Plugins installés (${pluginMeta.length})</div>
+      <button class="tbtn" onclick="reloadPlugins()">🔄 Recharger les plugins</button>
+    </div>
+    ${pluginMeta.length===0?`
+      <div style="text-align:center;padding:40px 20px;color:var(--text3)">
+        <div style="font-size:32px;margin-bottom:10px">🧩</div>
+        <div style="font-size:12px;margin-bottom:6px">Aucun plugin installé</div>
+        <div style="font-size:11px;max-width:420px;margin:0 auto;line-height:1.6">
+          Pose un fichier <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">.json</code> dans le dossier
+          <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> à côté de MacroDeck.exe, puis clique sur "Recharger".
+        </div>
+      </div>
+    `:`
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${pluginMeta.map(p=>{
+          const actsForPlugin=pluginCatalog.filter(a=>a.plugin===p.name||a.plugin===p.file);
+          return `<div class="plugin-card">
+            <div class="plugin-card-h">
+              <span class="plugin-ic">🧩</span>
+              <div><div class="plugin-name">${p.name||p.file}</div><div class="plugin-file">${p.file}${p.version?` · v${p.version}`:""}</div></div>
+              <span class="plugin-count">${actsForPlugin.length} action${actsForPlugin.length>1?"s":""}</span>
+            </div>
+            ${actsForPlugin.length?`<div class="plugin-acts">${actsForPlugin.map(a=>`<span class="plugin-act-chip">${a.icon} ${a.name}</span>`).join("")}</div>`:""}
+          </div>`;
+        }).join("")}
+      </div>
+    `}
+    <div class="sep" style="margin:20px 0"></div>
+    <div class="grp-lbl" style="margin-bottom:8px">📖 Créer un plugin</div>
+    <div style="font-size:11px;color:var(--text2);line-height:1.7;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px">
+      Un plugin est un simple fichier <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">.json</code> qui déclare une ou plusieurs actions.
+      Pas besoin de recompiler MacroDeck : pose le fichier dans <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> et clique sur "Recharger".
+      <br><br>
+      <b>3 types d'exécution possibles :</b><br>
+      • <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">shell</code> — commande Windows (fenêtre toujours cachée)<br>
+      • <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">powershell</code> — script PowerShell (fenêtre cachée)<br>
+      • <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">http</code> — appel API/webhook (parfait pour Discord, Home Assistant, n8n...)<br><br>
+      Les paramètres saisis dans la GUI (ex: <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">{message}</code>) et la valeur d'un potard
+      (<code style="background:var(--bg3);padding:1px 5px;border-radius:4px">{value}</code>) sont automatiquement substitués dans la commande.
+      <button class="tbtn" style="margin-top:10px" onclick="downloadPluginExample()">⬇ Télécharger un exemple de plugin</button>
+    </div>`;
+}
+function reloadPlugins(){
+  wsSend({type:"reload_plugins"});
+  toast("Rechargement des plugins...");
+}
+function downloadPluginExample(){
+  const example = {
+    name: "Discord Webhook",
+    version: "1.0",
+    actions: [{
+      type: "plugin_discord_say",
+      name: "Discord : Envoyer un message",
+      icon: "💬",
+      desc: "Poste un message dans un salon via un webhook",
+      params: [
+        {key:"webhook_url", lbl:"URL Webhook", ph:"https://discord.com/api/webhooks/..."},
+        {key:"message", lbl:"Message", ph:"Bonjour !"}
+      ],
+      run: { kind:"http", method:"POST", url:"{webhook_url}", body:{content:"{message}"} }
+    }]
+  };
+  const blob = new Blob([JSON.stringify(example,null,2)], {type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="exemple_plugin_discord.json";
+  a.click();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // AUTOSAVE — sauvegarde automatiquement la config côté backend
@@ -915,17 +1061,32 @@ function renderBtnDrawer(i) {
 
 function renderPotDrawer(i) {
   const p=getPotData(i), pct=getPct(i);
+  const def=potActDef(p.action);
+  // Grouper le catalogue par catégorie pour un affichage compact
+  const cats=[...new Set(POT_ACTS.map(a=>a.cat))];
   document.getElementById("potDrawerBody").innerHTML=`
     <div class="grp">
       <div class="grp-lbl">Nom</div>
       <input class="inp" value="${p.name||""}" oninput="setPotField(${i},'name',this.value)">
     </div>
     <div class="grp">
-      <div class="grp-lbl">Action</div>
-      <select class="sel" onchange="setPotField(${i},'action',this.value)">
-        ${["volume_system","volume_app","brightness","scroll","custom"].map(a=>`<option ${p.action===a?"selected":""}>${a}</option>`).join("")}
-      </select>
+      <div class="grp-lbl">Action assignée</div>
+      <div class="pot-act-list">
+        ${cats.map(c=>`
+          <div class="pot-act-cat">${c}</div>
+          ${POT_ACTS.filter(a=>a.cat===c).map(a=>`
+            <div class="pot-act-item${p.action===a.action?" selected":""}" onclick="setPotAction(${i},'${a.action}')">
+              <span class="pot-act-ic">${a.icon}</span>
+              <div class="pot-act-info"><div class="n">${a.name}</div><div class="d">${a.desc}</div></div>
+            </div>`).join("")}
+        `).join("")}
+      </div>
     </div>
+    ${def && def.params.length ? `
+    <div class="grp">
+      <div class="grp-lbl">Paramètres — ${def.name}</div>
+      <div class="pot-params">${def.params.map(par=>renderPotParam(i,par,p)).join("")}</div>
+    </div>` : ""}
     <div class="grp">
       <div class="grp-lbl">Valeur actuelle — <span style="color:var(--accent);font-family:monospace">${pct}%</span></div>
       <div class="m-bar" style="height:4px;margin:6px 0"><div class="m-fill" style="width:${pct}%;background:var(--accent);height:4px"></div></div>
@@ -933,6 +1094,28 @@ function renderPotDrawer(i) {
     </div>
     <div class="sep"></div>
     ${metricsHtml()}`;
+}
+function setPotAction(i,action){
+  setPotField(i,'action',action);
+  renderPotDrawer(i);
+}
+function renderPotParam(i,par,p){
+  const val=p[par.key]||"";
+  if(par.special==="audio_session_picker"){
+    return `<div class="p-row"><div class="p-lbl">${par.lbl}</div><div style="flex:1">
+      <input class="p-inp" value="${val}" placeholder="${par.ph||""}" oninput="setPotField(${i},'${par.key}',this.value)">
+      <div class="picker-list" id="potPicker_${i}_${par.key}"><button class="picker-load-btn" onclick="loadAudioSessionsForPot(${i},'${par.key}')">🔊 Choisir parmi les apps avec du son actif...</button></div>
+    </div></div>`;
+  }
+  if(par.key==="script"){
+    return `<div class="p-row"><div class="p-lbl">${par.lbl}</div>
+      <textarea class="p-inp" style="min-height:70px;font-family:'JetBrains Mono',monospace" placeholder="${par.ph||""}" oninput="setPotField(${i},'${par.key}',this.value)">${val}</textarea></div>`;
+  }
+  return `<div class="p-row"><div class="p-lbl">${par.lbl}</div><input class="p-inp" value="${val}" placeholder="${par.ph||""}" oninput="setPotField(${i},'${par.key}',this.value)"></div>`;
+}
+function loadAudioSessionsForPot(i,key){
+  wsSend({type:"get_audio_sessions"});
+  _pendingAudioPickerTarget={kind:"pot",i,key};
 }
 
 function metricsHtml() {
@@ -1119,12 +1302,92 @@ function selectAct(type){
       <input class="app-srch" id="appSrch" placeholder="🔍 Filtrer les apps..." oninput="filterAppPicker(this.value)">
       <div class="app-lst" id="appLst">${appsLoaded?"":"<div style='padding:14px;text-align:center;font-size:11px;color:var(--text3)'>Chargement...</div>"}</div>
     </div></div>`;
+    if(p.special==="process_picker") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><div style="flex:1">
+      <input class="p-inp" style="width:100%;margin-bottom:5px" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value">
+      <div class="picker-list"><button class="picker-load-btn" onclick="loadProcessPicker('${p.key}')">📋 Choisir parmi les processus en cours...</button>
+      <div class="picker-results" id="procPicker_${p.key}" style="display:none"></div></div>
+    </div></div>`;
+    if(p.special==="audio_session_picker") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><div style="flex:1">
+      <input class="p-inp" style="width:100%;margin-bottom:5px" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value">
+      <div class="picker-list"><button class="picker-load-btn" onclick="loadAudioPicker('${p.key}')">🔊 Choisir parmi les apps avec du son actif...</button>
+      <div class="picker-results" id="audioPicker_${p.key}" style="display:none"></div></div>
+    </div></div>`;
+    if(p.special==="folder_picker") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><div style="flex:1">
+      <div style="display:flex;gap:6px">
+        <input class="p-inp" style="flex:1" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value">
+        <button class="picker-load-btn" style="width:auto;padding:5px 10px" onclick="pickNativeFolder('${p.key}')">📁 Parcourir...</button>
+      </div></div></div>`;
+    if(p.special==="file_picker") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><div style="flex:1">
+      <div style="display:flex;gap:6px">
+        <input class="p-inp" style="flex:1" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value">
+        <button class="picker-load-btn" style="width:auto;padding:5px 10px" onclick="pickNativeFile('${p.key}')">📄 Parcourir...</button>
+      </div></div></div>`;
+    if(p.key==="script"||p.key==="code") return `<div class="p-row"><div class="p-lbl">${p.lbl}</div>
+      <textarea class="p-inp" style="min-height:70px;font-family:'JetBrains Mono',monospace" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value"></textarea></div>`;
     return `<div class="p-row"><div class="p-lbl">${p.lbl}</div><input class="p-inp" id="param_${p.key}" placeholder="${p.ph||""}" oninput="selActObj.params['${p.key}']=this.value"></div>`;
   }).join("")}</div>`;
   if(act.params.some(p=>p.special==="app_picker")){
     if(appsLoaded) renderAppPicker();
     else wsSend({type:"get_apps"});
   }
+}
+
+// ─── PICKERS GÉNÉRIQUES (processus, sessions audio, dossier/fichier natif) ──
+let _pendingAudioPickerTarget=null;
+function loadProcessPicker(key){
+  wsSend({type:"get_processes"});
+  _pendingProcessPickerKey=key;
+}
+let _pendingProcessPickerKey=null;
+function renderProcessPicker(list){
+  if(!_pendingProcessPickerKey) return;
+  const el=document.getElementById("procPicker_"+_pendingProcessPickerKey);
+  if(!el) return;
+  el.style.display="block";
+  el.innerHTML=list.map(n=>`<div class="picker-row" onclick="pickProcess('${_pendingProcessPickerKey}','${n.replace(/'/g,"\\'")}')">${n}</div>`).join("");
+}
+function pickProcess(key,name){
+  const inp=document.getElementById("param_"+key);
+  if(inp){inp.value=name;if(selActObj) selActObj.params[key]=name;}
+  toast("✓ "+name);
+}
+function loadAudioPicker(key){
+  wsSend({type:"get_audio_sessions"});
+  _pendingAudioPickerTarget={kind:"modal",key};
+}
+function renderAudioPicker(list){
+  if(!_pendingAudioPickerTarget) return;
+  const t=_pendingAudioPickerTarget;
+  if(t.kind==="modal"){
+    const el=document.getElementById("audioPicker_"+t.key);
+    if(!el) return;
+    el.style.display="block";
+    el.innerHTML=list.length?list.map(n=>`<div class="picker-row" onclick="pickAudioApp('${t.key}','${n.replace(/'/g,"\\'")}')">${n}</div>`).join(""):
+      `<div style="padding:10px;font-size:10px;color:var(--text3)">Aucune app avec session audio active actuellement. Lance le son dans l'app, puis réessaie.</div>`;
+  } else if(t.kind==="pot"){
+    const el=document.getElementById(`potPicker_${t.i}_${t.key}`);
+    if(!el) return;
+    el.innerHTML=list.length?list.map(n=>`<div class="picker-row" onclick="pickAudioForPot(${t.i},'${t.key}','${n.replace(/'/g,"\\'")}')">${n}</div>`).join(""):
+      `<div style="padding:10px;font-size:10px;color:var(--text3)">Aucune app avec session audio active actuellement.</div>`;
+  }
+}
+function pickAudioApp(key,name){
+  const inp=document.getElementById("param_"+key);
+  if(inp){inp.value=name;if(selActObj) selActObj.params[key]=name;}
+  toast("✓ "+name);
+}
+function pickAudioForPot(i,key,name){
+  setPotField(i,key,name);
+  renderPotDrawer(i);
+  toast("✓ "+name);
+}
+function pickNativeFolder(key){ wsSend({type:"pick_folder",field:key}); toast("Sélectionne un dossier dans la fenêtre Windows..."); }
+function pickNativeFile(key){ wsSend({type:"pick_file",field:key}); toast("Sélectionne un fichier dans la fenêtre Windows..."); }
+function applyPickedPath(field,path){
+  if(!path) return;
+  const inp=document.getElementById("param_"+field);
+  if(inp){inp.value=path;if(selActObj) selActObj.params[field]=path;}
+  toast("✓ Chemin sélectionné");
 }
 
 function renderAppPicker(){
@@ -1194,9 +1457,10 @@ function exportLog(){
 function switchView(id,btnEl) {
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   const v=document.getElementById("v-"+id); if(v) v.classList.add("active");
-  document.querySelectorAll(".tn-btn").forEach(b=>b.classList.remove("active"));
-  if(btnEl) btnEl.classList.add("active");
+  const titles={device:"Device",metrics:"Métriques",profiles:"Profils",plugins:"Plugins",serial:"Serial Monitor",settings:"Paramètres"};
+  const t=document.getElementById("viewTitle"); if(t) t.textContent=titles[id]||id;
   if(id==="profiles") renderProfiles();
+  if(id==="plugins") renderPlugins();
 }
 function sbActive(el){document.querySelectorAll(".sb-btn").forEach(b=>b.classList.remove("active"));el.classList.add("active");}
 
