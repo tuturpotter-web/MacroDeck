@@ -106,6 +106,46 @@ def set_mute(s):
     try: v=_vif(); v and v.SetMute(s, None)
     except: pass
 
+def set_app_volume(process_name: str, level: int):
+    """Règle le volume d'une application précise via ses sessions audio (pycaw)."""
+    if not PYCAW_OK or not process_name: return
+    try:
+        from pycaw.pycaw import ISimpleAudioVolume
+        target = process_name.lower().replace(".exe","")
+        for session in AudioUtilities.GetAllSessions():
+            if session.Process and session.Process.name().lower().replace(".exe","") == target:
+                vol = session._ctl.QueryInterface(ISimpleAudioVolume)
+                vol.SetMasterVolume(max(0,min(100,level))/100.0, None)
+    except Exception as e:
+        log.error(f"set_app_volume: {e}")
+
+def get_app_volume(process_name: str):
+    if not PYCAW_OK or not process_name: return None
+    try:
+        from pycaw.pycaw import ISimpleAudioVolume
+        target = process_name.lower().replace(".exe","")
+        for session in AudioUtilities.GetAllSessions():
+            if session.Process and session.Process.name().lower().replace(".exe","") == target:
+                vol = session._ctl.QueryInterface(ISimpleAudioVolume)
+                return round(vol.GetMasterVolume()*100)
+    except: pass
+    return None
+
+def list_audio_sessions():
+    """Liste les applications qui ont actuellement une session audio active (pour le picker)."""
+    out = []
+    if not PYCAW_OK: return out
+    try:
+        seen = set()
+        for session in AudioUtilities.GetAllSessions():
+            if session.Process:
+                name = session.Process.name()
+                if name.lower() not in seen:
+                    seen.add(name.lower())
+                    out.append(name)
+    except: pass
+    return sorted(out)
+
 # ── APPS ─────────────────────────────────────────────────────────────────────
 def get_installed_apps():
     apps=[]; seen=set()
@@ -199,14 +239,104 @@ class ConfigManager:
 
 # ── MOTEUR D'ACTIONS ─────────────────────────────────────────────────────────
 class ActionEngine:
-    def __init__(self, cfg: ConfigManager, broadcast_fn):
+    def __init__(self, cfg: ConfigManager, broadcast_fn, plugins=None):
         self.cfg = cfg
         self.broadcast = broadcast_fn
+        self.plugins = plugins
 
     def run(self, actions: list):
         for a in actions:
             try: self._one(a)
             except Exception as e: log.error(f"Action {a.get('type')}: {e}")
+
+    def run_pot(self, pot_cfg: dict, val: int):
+        """Applique l'action configurée sur un potard, avec la valeur 0-100 reçue."""
+        action = pot_cfg.get("action","volume_system")
+        try:
+            if action == "volume_system":
+                set_volume(val)
+
+            elif action == "volume_app":
+                set_app_volume(pot_cfg.get("app",""), val)
+
+            elif action == "brightness":
+                run_hidden(["powershell","-Command",
+                    f"(Get-WmiObject -NS root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{val})"],
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+
+            elif action == "obs_volume":
+                # Volume d'une source OBS (0-100 → -100dB..0dB approximatif)
+                self._obs(pot_cfg.get("source","Mic/Aux"), val)
+
+            elif action == "scroll":
+                # Défilement proportionnel à l'écart depuis le dernier appel
+                last = pot_cfg.get("_last", 50)
+                delta = val - last
+                pot_cfg["_last"] = val
+                if delta:
+                    mouse.wheel(delta/8)
+
+            elif action == "zoom_level":
+                # Ctrl + molette pour zoomer (navigateur, éditeurs...)
+                last = pot_cfg.get("_last", 50)
+                delta = val - last
+                pot_cfg["_last"] = val
+                if delta:
+                    keyboard.press("ctrl"); mouse.wheel(delta/10); keyboard.release("ctrl")
+
+            elif action == "media_seek":
+                # Avance/recule la lecture média (touches fléchées)
+                last = pot_cfg.get("_last", 50)
+                delta = val - last
+                pot_cfg["_last"] = val
+                if delta > 2: keyboard.send("right")
+                elif delta < -2: keyboard.send("left")
+
+            elif action == "playback_speed":
+                # Vitesse lecture VLC/YouTube ([ et ] sont les raccourcis usuels)
+                last = pot_cfg.get("_last", 50)
+                delta = val - last
+                pot_cfg["_last"] = val
+                if delta > 3: keyboard.send("shift+.")
+                elif delta < -3: keyboard.send("shift+,")
+
+            elif action == "discord_volume":
+                set_app_volume("Discord", val)
+
+            elif action == "spotify_volume":
+                set_app_volume("Spotify", val)
+
+            elif action == "game_volume":
+                set_app_volume(pot_cfg.get("app",""), val)
+
+            elif action == "mic_volume":
+                set_app_volume(pot_cfg.get("app","")or "Discord", val)  # fallback simple
+
+            elif action == "led_strip_color":
+                # Envoie une teinte vers une LED ESP32 (idx fourni via config)
+                strip = pot_cfg.get("strip", 0)
+                self.broadcast({"type":"led_strip_set","strip":strip,"value":val})
+
+            elif action == "custom":
+                code = pot_cfg.get("script","")
+                if code:
+                    exec(code, {"value": val})
+
+            elif self.plugins and action in self.plugins.actions:
+                params = {k:v for k,v in pot_cfg.items() if not k.startswith("_") and k != "action"}
+                self.plugins.run(action, params, value=val)
+
+        except Exception as e:
+            log.error(f"Pot action '{action}': {e}")
+
+    def _obs(self, source, val):
+        try:
+            import websocket as _ws
+            db = round((val/100)*100 - 100, 1)  # 0-100 → -100dB..0dB
+            ws = _ws.create_connection("ws://localhost:4444", timeout=2)
+            ws.send(json.dumps({"request-type":"SetVolume","message-id":"pot","source":source,"volume":db,"useDecibel":True}))
+            ws.close()
+        except: pass
 
     def _one(self, a: dict):
         t = a.get("type","")
@@ -366,6 +496,14 @@ class ActionEngine:
                     self._one(act)
                     if delay: time.sleep(delay/1000.0)
             threading.Thread(target=_run, daemon=True).start()
+
+        # ── PLUGINS (actions non reconnues ci-dessus) ─────────────────────────
+        elif self.plugins and t in self.plugins.actions:
+            params = {k:v for k,v in a.items() if k != "type"}
+            self.plugins.run(t, params)
+
+        else:
+            log.warning(f"Action inconnue (ni native, ni plugin) : {t}")
 
     # ── Helpers ─────────────────────────────────────────────────────────────
     def _obs(self, req, data):
@@ -546,11 +684,136 @@ class Transport:
             except: pass
 
 # ── MACRODECK CORE ────────────────────────────────────────────────────────────
+# ── PLUGINS ────────────────────────────────────────────────────────────────────
+# Système de plugins sans recompilation : chaque plugin est un simple fichier
+# .json posé dans le dossier "plugins" (à côté de l'exe ou du .py). Il déclare
+# une ou plusieurs actions custom, exécutées via une commande shell/PowerShell
+# avec des variables substituées (ex: {value} pour la valeur d'un potard).
+#
+# Exemple de plugin "plugins/discord_bot.json" :
+# {
+#   "name": "Discord Bot Webhook",
+#   "version": "1.0",
+#   "actions": [
+#     {
+#       "type": "plugin_discord_say",
+#       "name": "Discord : Envoyer message webhook",
+#       "icon": "💬",
+#       "desc": "Poste un message via un webhook Discord",
+#       "params": [
+#         {"key":"webhook_url","lbl":"URL Webhook","ph":"https://discord.com/api/webhooks/..."},
+#         {"key":"message","lbl":"Message","ph":"Bonjour !"}
+#       ],
+#       "run": {
+#         "kind": "http",
+#         "method": "POST",
+#         "url": "{webhook_url}",
+#         "body": {"content": "{message}"}
+#       }
+#     }
+#   ]
+# }
+#
+# "run.kind" peut être :
+#   "shell"      → exécute "command" (fenêtre toujours cachée)
+#   "powershell" → exécute "command" via powershell -Command (fenêtre cachée)
+#   "http"       → fait une requête HTTP (url/method/body, utile pour webhooks/API locales)
+# Les valeurs {param_key} et {value} (pour les potards) sont substituées dans
+# command / url / body avant exécution.
+
+class PluginManager:
+    def __init__(self):
+        self.plugins = []     # liste de manifestes chargés
+        self.actions = {}     # type -> définition d'action (pour le catalogue GUI)
+        self.reload()
+
+    def _plugins_dir(self) -> Path:
+        base = Path(_app_dir_persistent())
+        d = base / "plugins"
+        d.mkdir(exist_ok=True)
+        return d
+
+    def reload(self):
+        self.plugins = []
+        self.actions = {}
+        d = self._plugins_dir()
+        for f in sorted(d.glob("*.json")):
+            try:
+                with open(f, "r", encoding="utf-8") as fp:
+                    manifest = json.load(fp)
+                manifest["_file"] = f.name
+                self.plugins.append(manifest)
+                for act in manifest.get("actions", []):
+                    t = act.get("type")
+                    if t:
+                        self.actions[t] = act
+                log.info(f"Plugin chargé: {manifest.get('name', f.name)}")
+            except Exception as e:
+                log.error(f"Plugin invalide {f.name}: {e}")
+
+    def catalog(self) -> list:
+        """Retourne le catalogue d'actions exposées par tous les plugins, pour la GUI."""
+        out = []
+        for p in self.plugins:
+            for act in p.get("actions", []):
+                out.append({
+                    "cat": "Plugins",
+                    "icon": act.get("icon","🧩"),
+                    "type": act.get("type"),
+                    "name": act.get("name","Action plugin"),
+                    "desc": act.get("desc", p.get("name","")),
+                    "params": act.get("params", []),
+                    "plugin": p.get("name", p.get("_file","")),
+                })
+        return out
+
+    def run(self, action_type: str, params: dict, value=None):
+        act = self.actions.get(action_type)
+        if not act: return
+        run_def = act.get("run", {})
+        kind = run_def.get("kind", "shell")
+
+        def _sub(s):
+            if not isinstance(s, str): return s
+            out = s
+            for k, v in params.items():
+                out = out.replace("{"+k+"}", str(v))
+            if value is not None:
+                out = out.replace("{value}", str(value))
+            return out
+
+        try:
+            if kind == "shell":
+                cmd = _sub(run_def.get("command",""))
+                if cmd: run_silent(cmd)
+
+            elif kind == "powershell":
+                cmd = _sub(run_def.get("command",""))
+                if cmd:
+                    run_hidden(["powershell","-NoProfile","-Command", cmd],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+
+            elif kind == "http":
+                import urllib.request
+                url = _sub(run_def.get("url",""))
+                method = run_def.get("method","GET")
+                body = run_def.get("body")
+                req = urllib.request.Request(url, method=method)
+                if body:
+                    body_sub = json.loads(_sub(json.dumps(body)))
+                    req.data = json.dumps(body_sub).encode()
+                    req.add_header("Content-Type","application/json")
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    log.info(f"Plugin HTTP {url} → {r.status}")
+        except Exception as e:
+            log.error(f"Plugin run '{action_type}': {e}")
+
 class MacroDeck:
     def __init__(self):
         self.cfg       = ConfigManager()
         self.ws_clients= set()
-        self.engine    = ActionEngine(self.cfg, self._broadcast)
+        self.plugins   = PluginManager()
+        self.engine    = ActionEngine(self.cfg, self._broadcast, self.plugins)
         self.metrics   = Metrics()
         self.transport = Transport(self._on_esp32)
         self.watcher   = AppWatcher(self._on_app)
@@ -581,14 +844,8 @@ class MacroDeck:
             self._broadcast({"type":"button_event","button":idx,"event":t})
         elif t=="pot":
             idx=msg.get("i",0); val=msg.get("v",0)
-            # Applique l'action du potard
             pot_cfg=self.cfg.active()["pots"].get(str(idx),{})
-            action=pot_cfg.get("action","volume_system")
-            if action=="volume_system": set_volume(val)
-            elif action=="brightness":
-                run_hidden(["powershell","-Command",
-                    f"(Get-WmiObject -NS root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{val})"],
-                    creationflags=subprocess.CREATE_NO_WINDOW)
+            self.engine.run_pot(pot_cfg, val)
             self._broadcast({"type":"pot_event","pot":idx,"value":val})
 
     async def _metrics_loop(self):
@@ -663,6 +920,51 @@ class MacroDeck:
             apps=get_installed_apps()
             await ws.send(json.dumps({"type":"apps","data":apps}))
 
+        elif t=="get_plugins":
+            await ws.send(json.dumps({"type":"plugins","data":self.plugins.catalog(),
+                "meta":[{"name":p.get("name"),"file":p.get("_file"),"version":p.get("version","")} for p in self.plugins.plugins]}))
+
+        elif t=="reload_plugins":
+            self.plugins.reload()
+            await ws.send(json.dumps({"type":"plugins","data":self.plugins.catalog(),
+                "meta":[{"name":p.get("name"),"file":p.get("_file"),"version":p.get("version","")} for p in self.plugins.plugins]}))
+            self._broadcast({"type":"toast","message":f"✓ {len(self.plugins.plugins)} plugin(s) chargé(s)"})
+
+        elif t=="get_processes":
+            # Processus en cours (pour "fermer une application", choisir une fenêtre...)
+            procs=[]
+            seen=set()
+            for p in psutil.process_iter(["name"]):
+                try:
+                    n=p.info["name"]
+                    if n and n.lower() not in seen:
+                        seen.add(n.lower()); procs.append(n)
+                except: pass
+            await ws.send(json.dumps({"type":"processes","data":sorted(procs)}))
+
+        elif t=="get_audio_sessions":
+            # Applications ayant une session audio active (pour volume_app)
+            sessions=list_audio_sessions()
+            await ws.send(json.dumps({"type":"audio_sessions","data":sessions}))
+
+        elif t=="pick_folder":
+            # Ouvre le sélecteur de dossier natif Windows dans un thread (non bloquant
+            # pour la boucle asyncio) et renvoie le chemin choisi une fois sélectionné.
+            field = msg.get("field","")
+            async def _do_pick_folder():
+                loop = asyncio.get_event_loop()
+                path = await loop.run_in_executor(None, self._native_picker, True)
+                await ws.send(json.dumps({"type":"picked_path","field":field,"path":path}))
+            asyncio.ensure_future(_do_pick_folder())
+
+        elif t=="pick_file":
+            field = msg.get("field","")
+            async def _do_pick_file():
+                loop = asyncio.get_event_loop()
+                path = await loop.run_in_executor(None, self._native_picker, False)
+                await ws.send(json.dumps({"type":"picked_path","field":field,"path":path}))
+            asyncio.ensure_future(_do_pick_file())
+
         elif t=="connect_serial":
             self.transport.start(msg.get("port","AUTO"))
 
@@ -673,6 +975,32 @@ class MacroDeck:
                 self.cfg.data["profiles"][pid]["buttons"][bid]=data
                 self.cfg.save()
 
+    def _native_picker(self, folder: bool) -> str:
+        """Ouvre une boîte de dialogue Windows native pour choisir un dossier ou fichier.
+        Tourne dans un script PowerShell séparé (bloquant) pour ne jamais geler
+        la boucle asyncio principale, fenêtre cachée par défaut sauf le dialog lui-même."""
+        try:
+            if folder:
+                ps = (
+                    "Add-Type -AssemblyName System.Windows.Forms;"
+                    "$f=New-Object System.Windows.Forms.FolderBrowserDialog;"
+                    "if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}"
+                )
+            else:
+                ps = (
+                    "Add-Type -AssemblyName System.Windows.Forms;"
+                    "$f=New-Object System.Windows.Forms.OpenFileDialog;"
+                    "if($f.ShowDialog() -eq 'OK'){Write-Output $f.FileName}"
+                )
+            result = subprocess.run(
+                ["powershell","-NoProfile","-Command", ps],
+                capture_output=True, text=True, timeout=120
+            )
+            return result.stdout.strip()
+        except Exception as e:
+            log.error(f"native_picker: {e}")
+            return ""
+
     async def run(self):
         self.transport.start(self.cfg.data.get("serial_port","AUTO"))
         srv=await websockets.serve(self._ws_handler,"localhost",WS_PORT)
@@ -681,10 +1009,22 @@ class MacroDeck:
 # ── HTTP SERVER ───────────────────────────────────────────────────────────────
 def _app_dir() -> str:
     """Retourne le dossier où se trouve gui.html, que l'app tourne en .py
-    ou compilée en .exe (PyInstaller --onefile extrait dans sys._MEIPASS)."""
+    ou compilée en .exe (PyInstaller --onefile extrait dans sys._MEIPASS,
+    un dossier TEMPORAIRE recréé à chaque lancement — bon pour des
+    ressources en lecture seule comme gui.html, mauvais pour tout ce qui
+    doit persister, voir _app_dir_persistent() ci-dessous)."""
     if getattr(sys, "frozen", False):
-        # Compilé avec PyInstaller : fichiers --add-data extraits ici
         return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _app_dir_persistent() -> str:
+    """Retourne le dossier RÉEL et STABLE à côté de l'exécutable (ou du .py),
+    par opposition à _app_dir() qui pointe vers un dossier temporaire en
+    mode .exe compilé. À utiliser pour tout ce qui doit survivre entre deux
+    lancements : dossier plugins/, etc. (la config elle-même est dans
+    ~/.macrodeck/, donc indépendante de l'emplacement de l'exe)."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 def _http_server():
