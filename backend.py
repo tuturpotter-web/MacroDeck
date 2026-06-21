@@ -40,23 +40,66 @@ def run_silent(cmd: str):
     """Remplace os.system() par un appel qui ne crée jamais de fenêtre console."""
     return run_hidden(cmd, shell=True)
 
-def open_url_default(url: str):
-    """Ouvre une URL avec le navigateur PAR DÉFAUT de Windows, de façon fiable.
-    os.startfile() délègue directement au shell Windows (ShellExecute), qui
-    respecte toujours l'association ".html"/"http" configurée dans Windows —
-    contrairement à webbrowser.open() qui peut dans certains environnements
-    (notamment une fois compilé en .exe avec PyInstaller) se tromper de
-    navigateur ou échouer silencieusement selon ce qu'il détecte au démarrage."""
-    if not url: return
+def _get_default_browser_command() -> Optional[str]:
+    """Lit le VRAI navigateur par défaut choisi par l'utilisateur dans Windows
+    10/11 (clé de registre UserChoice), et retourne la commande pour le
+    lancer. C'est plus fiable que os.startfile()/webbrowser.open(), qui
+    peuvent parfois retomber sur une association "http" legacy cassée
+    (souvent Internet Explorer) au lieu du vrai navigateur configuré dans
+    Paramètres Windows > Applications par défaut."""
+    if sys.platform != "win32": return None
     try:
-        if sys.platform == "win32":
-            os.startfile(url)
-        else:
-            webbrowser.open(url)
+        import winreg
+        # 1. Quel ProgId est choisi par l'utilisateur pour le protocole http
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice"
+        )
+        prog_id, _ = winreg.QueryValueEx(key, "ProgId")
+        winreg.CloseKey(key)
+
+        # 2. Quelle commande correspond à ce ProgId
+        cmd_key = winreg.OpenKey(
+            winreg.HKEY_CLASSES_ROOT, fr"{prog_id}\shell\open\command"
+        )
+        command, _ = winreg.QueryValueEx(cmd_key, "")
+        winreg.CloseKey(cmd_key)
+        return command  # ex: '"C:\...\chrome.exe" --single-argument %1'
     except Exception as e:
-        log.error(f"open_url_default('{url}'): {e}")
-        try: webbrowser.open(url)
-        except: pass
+        log.warning(f"Lecture navigateur par défaut: {e}")
+        return None
+
+def open_url_default(url: str):
+    """Ouvre une URL avec le VRAI navigateur par défaut de Windows. Lit le
+    réglage UserChoice du registre et lance l'exécutable directement plutôt
+    que de passer par une association de protocole générique, qui peut
+    retomber sur Internet Explorer sur certaines installations Windows
+    (association "http" legacy non synchronisée avec le choix utilisateur
+    moderne). Conserve un repli en cascade si la lecture registre échoue."""
+    if not url: return
+    if sys.platform == "win32":
+        cmd = _get_default_browser_command()
+        if cmd:
+            try:
+                if "%1" in cmd:
+                    final_cmd = cmd.replace("%1", url)
+                else:
+                    final_cmd = f'{cmd} "{url}"'
+                run_hidden(final_cmd, shell=True)
+                return
+            except Exception as e:
+                log.error(f"Lancement navigateur via registre: {e}")
+        # Repli : ShellExecute standard (peut, dans de rares cas, retomber
+        # sur une association legacy, mais reste mieux que rien)
+        try:
+            os.startfile(url)
+            return
+        except Exception as e:
+            log.error(f"open_url_default fallback os.startfile('{url}'): {e}")
+    try:
+        webbrowser.open(url)
+    except Exception as e:
+        log.error(f"open_url_default fallback webbrowser('{url}'): {e}")
 
 import psutil
 import keyboard
@@ -726,6 +769,8 @@ class ProfileOverlayWindow:
     def __init__(self):
         self._queue = None
         self._root = None
+        self._popup = None
+        self._close_timer = None
         self._ready = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
         self._ready.wait(timeout=5)
@@ -771,51 +816,49 @@ class ProfileOverlayWindow:
         root = self._root
         if not root: return
 
-        # Ferme une éventuelle popup déjà affichée avant d'en ouvrir une neuve
+        # Annule proprement le timer de fermeture ET détruit l'ancienne popup
+        # AVANT d'en créer une neuve : sans after_cancel, l'ancien timer Tk
+        # continue d'exister et peut référencer un widget déjà détruit,
+        # ce qui empêchait la popup de se fermer correctement.
+        if getattr(self, "_close_timer", None):
+            try: root.after_cancel(self._close_timer)
+            except: pass
+            self._close_timer = None
         if getattr(self, "_popup", None):
             try: self._popup.destroy()
             except: pass
+            self._popup = None
 
         win = tk.Toplevel(root)
         self._popup = win
         win.overrideredirect(True)       # pas de barre de titre/bordure
         win.attributes("-topmost", True) # toujours au-dessus de TOUTES les fenêtres, y compris jeux/plein écran
-        try: win.attributes("-alpha", 0.96)
+        try: win.attributes("-alpha", 0.92)
         except: pass
 
-        bg = "#14151b"; fg = "#f1f5f9"; sub = "#7a8194"; card = "#1c1f29"; accent = "#6366f1"
+        # Juste une présence visuelle minimale (pas de contenu/grille de
+        # boutons) : un petit indicateur "changement de profil en cours".
+        bg = "#14151b"; accent = "#6366f1"
         win.configure(bg=bg)
 
         sw = win.winfo_screenwidth(); sh = win.winfo_screenheight()
-        width, height = 230, 200
+        width, height = 14, 14
         x = sw - width - 24
         y = sh - height - 60  # au-dessus de la barre des tâches
         win.geometry(f"{width}x{height}+{x}+{y}")
+        win.config(highlightbackground=accent, highlightcolor=accent, highlightthickness=2)
 
-        header = tk.Frame(win, bg=bg)
-        header.pack(fill="x", padx=12, pady=(10,6))
-        tk.Label(header, text="●", fg=accent, bg=bg, font=("Segoe UI",8)).pack(side="left")
-        tk.Label(header, text=profile.get("name","Profil"), fg=fg, bg=bg,
-                 font=("Segoe UI",10,"bold")).pack(side="left", padx=(5,0))
-
-        grid = tk.Frame(win, bg=bg)
-        grid.pack(padx=10, pady=(0,10))
-
-        buttons = profile.get("buttons", {})
-        for i in range(8):
-            b = buttons.get(str(i), {})
-            r, c = divmod(i, 4)
-            cell = tk.Frame(grid, bg=card, width=48, height=48, highlightthickness=1,
-                             highlightbackground="#ffffff15")
-            cell.grid(row=r, column=c, padx=3, pady=3)
-            cell.grid_propagate(False)
-            icon = b.get("icon","⭐")
-            tk.Label(cell, text=icon, fg=fg, bg=card, font=("Segoe UI Emoji",13)).pack(pady=(6,0))
-            label = (b.get("label") or "")[:9]
-            tk.Label(cell, text=label, fg=sub, bg=card, font=("Segoe UI",6)).pack()
-
-        # Disparaît automatiquement après 3.5s, comme l'overlay web
-        win.after(3500, lambda: win.destroy() if win.winfo_exists() else None)
+        # Fermeture garantie après EXACTEMENT 3 secondes, avec id de timer
+        # mémorisé pour pouvoir l'annuler proprement si un nouveau profil
+        # arrive avant l'échéance (évite toute popup fantôme qui reste affichée).
+        def _close():
+            self._close_timer = None
+            try:
+                if win.winfo_exists(): win.destroy()
+            except: pass
+            if self._popup is win:
+                self._popup = None
+        self._close_timer = root.after(3000, _close)
 
     def show_profile(self, profile: dict):
         """Affiche l'overlay pour ce profil. Thread-safe : peut être appelé
