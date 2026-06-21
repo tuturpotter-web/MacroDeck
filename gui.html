@@ -93,19 +93,23 @@ html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter
 /* Boutons */
 .btn-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:12px}
 .hw-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;aspect-ratio:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:all .12s;position:relative;overflow:hidden;padding:6px;user-select:none}
+.hw-btn.has-img{padding:0}
+.btn-ic-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.btn-img-overlay{position:absolute;left:0;right:0;bottom:0;height:55%;background:linear-gradient(to top,#000000b0,#00000000);pointer-events:none}
+.btn-nm-overlay{position:absolute;left:4px;right:4px;bottom:5px;color:#fff;text-shadow:0 1px 3px #000000a0;z-index:1}
 .hw-btn:hover{border-color:var(--border3);transform:translateY(-1px);box-shadow:0 4px 12px #00000030}
 .hw-btn.pressed{border-color:var(--accent);transform:scale(.94);box-shadow:0 0 16px var(--accent-glow)}
 .hw-btn.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-glow)}
-.btn-num{position:absolute;top:5px;left:6px;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.btn-num{position:absolute;top:5px;left:6px;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace;z-index:2}
 .btn-ic{font-size:17px;line-height:1}
 .btn-ic-img{width:28px;height:28px;object-fit:cover;border-radius:6px;flex-shrink:0}
 .btn-nm{font-size:8px;color:var(--text2);text-align:center;line-height:1.3;font-weight:500}
-.btn-bar{position:absolute;bottom:0;left:6px;right:6px;height:2px;border-radius:2px;background:var(--accent);opacity:.35;transition:opacity .2s}
+.btn-bar{position:absolute;bottom:0;left:6px;right:6px;height:2px;border-radius:2px;background:var(--accent);opacity:.35;transition:opacity .2s;z-index:2}
 .hw-btn.selected .btn-bar,.hw-btn.pressed .btn-bar{opacity:1}
-.btn-cnt{position:absolute;top:4px;right:5px;font-size:8px;color:var(--accent);background:var(--accent-dim);padding:1px 3px;border-radius:3px;font-family:'JetBrains Mono',monospace}
+.btn-cnt{position:absolute;top:4px;right:5px;font-size:8px;color:var(--accent);background:var(--accent-dim);padding:1px 3px;border-radius:3px;font-family:'JetBrains Mono',monospace;z-index:2}
 
 /* LED zone */
-.led-zone{display:grid;grid-template-columns:1fr 16px 16px 1fr;gap:6px;margin-bottom:12px;align-items:center}
+.led-zone{display:grid;grid-template-columns:1fr 16px 16px 1fr;gap:6px;margin-bottom:12px;align-items:stretch}
 .led-strip{height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;gap:6px;overflow:hidden;cursor:pointer;border:1px solid var(--border);position:relative;transition:filter .2s,border-color .2s;background:var(--bg4)}
 .led-strip:hover{filter:brightness(1.15);border-color:var(--border3)}
 .led-strip.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-glow)}
@@ -113,7 +117,7 @@ html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter
 .led-strip .led-lbl,.led-strip .led-pct{position:relative;z-index:1}
 .led-lbl{font-size:9px;color:#fff;letter-spacing:.5px;text-transform:uppercase;font-weight:700;text-shadow:0 1px 3px #00000080}
 .led-pct{font-size:10px;font-weight:700;margin-left:auto;font-family:'JetBrains Mono',monospace;transition:color .4s;color:#fff;text-shadow:0 1px 3px #00000080}
-.usb-c{width:16px;height:35px;align-self:center;background:var(--bg0);border-radius:3px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.usb-c{width:16px;height:100%;align-self:stretch;background:var(--bg0);border-radius:3px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
 .usb-c:hover{border-color:var(--accent-glow);filter:brightness(1.2)}
 .usb-c.active{border-color:var(--green)}
 .usb-c i{display:block;width:9px;height:20px;background:var(--bg3);border-radius:2px;border:1px solid var(--border);transition:background .3s}
@@ -144,6 +148,9 @@ html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter
 /* Champs */
 .grp{margin-bottom:14px}
 .grp-lbl{font-size:10px;color:var(--text3);margin-bottom:5px;font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.proto-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.proto-lbl{font-size:11px;color:var(--text2);width:100px;flex-shrink:0}
+.proto-inp{flex:1;font-family:'JetBrains Mono',monospace;font-size:11px}
 .inp{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);padding:6px 9px;border-radius:6px;font-size:12px;outline:none;font-family:'Inter',sans-serif;transition:border .12s}
 .inp:focus{border-color:var(--accent)}
 .sel{width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text);padding:6px 9px;border-radius:6px;font-size:12px;outline:none;font-family:'Inter',sans-serif;cursor:pointer}
@@ -234,7 +241,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 
 /* ── VIEW: SETTINGS ── */
 .settings-view{flex:1;overflow-y:auto;padding:24px}
-.settings-inner{max-width:480px}
+.settings-inner{max-width:560px}
 .settings-title{font-size:13px;font-weight:600;margin-bottom:18px}
 
 /* ── MODAL ACTION ── */
@@ -512,6 +519,41 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
             <div id="portsList" style="margin-top:5px;font-size:10px;color:var(--text3)"></div>
           </div>
           <div class="sep"></div>
+
+          <div class="grp-lbl" style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">🔌 Protocole ESP32</div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.6;margin-bottom:12px">
+            Définis le format exact des trames série échangées avec ton ESP32. Utilise <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{i}</code> pour l'index du bouton/potard (0-7) et <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{v}</code> pour une valeur (0-100). Par défaut le format est du JSON, mais tu peux mettre n'importe quel texte (ex: <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">BTN{i}:PRESS</code>).
+          </div>
+
+          <div class="grp-lbl" style="margin-top:14px">Trames reçues de l'ESP32 (boutons)</div>
+          <div class="proto-row"><span class="proto-lbl">Appui simple</span><input class="inp proto-inp" id="proto_in_press" placeholder='{"t":"press","i":{i}}'></div>
+          <div class="proto-row"><span class="proto-lbl">Appui long</span><input class="inp proto-inp" id="proto_in_long_press" placeholder='{"t":"long_press","i":{i}}'></div>
+          <div class="proto-row"><span class="proto-lbl">Double clic</span><input class="inp proto-inp" id="proto_in_double_click" placeholder='{"t":"double_click","i":{i}}'></div>
+          <div class="proto-row"><span class="proto-lbl">Relâchement</span><input class="inp proto-inp" id="proto_in_release" placeholder='{"t":"release","i":{i}}'></div>
+
+          <div class="grp-lbl" style="margin-top:14px">Trame reçue de l'ESP32 (potards)</div>
+          <div class="proto-row"><span class="proto-lbl">Valeur potard</span><input class="inp proto-inp" id="proto_in_pot" placeholder='{"t":"pot","i":{i},"v":{v}}'></div>
+
+          <div class="grp-lbl" style="margin-top:14px">Trame envoyée à l'ESP32 (LEDs)</div>
+          <div class="proto-row"><span class="proto-lbl">Mise à jour LED</span><input class="inp proto-inp" id="proto_out_led" placeholder='{"t":"led","s":{i},"v":{v}}'></div>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px;margin-bottom:10px">Exemple alternatif : <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">led{i}:{v}%</code> enverra par exemple <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">led1:42%</code></div>
+
+          <div style="display:flex;gap:6px;margin-top:10px">
+            <button class="tbtn pr" onclick="saveProtocol()">💾 Enregistrer le protocole</button>
+            <button class="tbtn" onclick="resetProtocolDefaults()">↺ Réinitialiser (JSON par défaut)</button>
+          </div>
+          <div id="protocolSaveMsg" style="font-size:10px;margin-top:6px"></div>
+
+          <div class="sep" style="margin-top:18px"></div>
+          <div class="grp-lbl" style="font-size:12px;font-weight:600;color:var(--text)">🧪 Tester une trame</div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Simule la réception d'une trame brute, comme si elle venait vraiment de l'ESP32 — utile pour vérifier ta config sans matériel branché.</div>
+          <div style="display:flex;gap:6px">
+            <input class="inp" id="protoTestSample" placeholder='ex: {"t":"press","i":2}' style="flex:1">
+            <button class="tbtn" onclick="simulateEsp32Frame()">▶ Envoyer</button>
+          </div>
+          <div id="protoTestResult" style="font-size:10px;margin-top:6px;color:var(--text3)"></div>
+
+          <div class="sep"></div>
           <div style="font-size:11px;color:var(--text3)">MacroDeck v15.1 — Console invisible — WebSocket :8765 — HTTP :8766</div>
         </div>
       </div>
@@ -740,17 +782,17 @@ function potActDef(action){ return POT_ACTS.find(p=>p.action===action); }
 // déjà un pourcentage 0-100 directement utilisable. "cap" = valeur brute à
 // normaliser sur cette borne max pour obtenir un pourcentage d'allumage.
 const LED_METRICS = [
-  {key:"cpu",        name:"Utilisation CPU",     icon:"🔲", color:"#3b82f6", pct:true},
-  {key:"ram",         name:"Utilisation RAM",     icon:"🧠", color:"#22c55e", pct:true},
-  {key:"gpu_usage",   name:"Utilisation GPU",     icon:"🎮", color:"#a855f7", pct:true},
-  {key:"gpu_vram",    name:"VRAM GPU",            icon:"🟪", color:"#c026d3", pct:true},
-  {key:"ssd_usage",   name:"Espace disque (C:)",  icon:"💾", color:"#eab308", pct:true},
-  {key:"cpu_temp",    name:"Température CPU",     icon:"🌡", color:"#ef4444", pct:false, cap:100},
-  {key:"gpu_temp",    name:"Température GPU",     icon:"🌡", color:"#f97316", pct:false, cap:100},
-  {key:"net_down",    name:"Réseau ↓ Download",   icon:"⬇", color:"#06b6d4", pct:false, cap:5120},
-  {key:"net_up",      name:"Réseau ↑ Upload",     icon:"⬆", color:"#0ea5e9", pct:false, cap:2048},
-  {key:"volume",      name:"Volume système",      icon:"🔊", color:"#84cc16", pct:true},
-  {key:"off",         name:"Éteinte",             icon:"⚫", color:"#374151", pct:true, isOff:true},
+  {key:"cpu",        name:"Utilisation CPU",     icon:"🔲", pct:true},
+  {key:"ram",         name:"Utilisation RAM",     icon:"🧠", pct:true},
+  {key:"gpu_usage",   name:"Utilisation GPU",     icon:"🎮", pct:true},
+  {key:"gpu_vram",    name:"VRAM GPU",            icon:"🟪", pct:true},
+  {key:"ssd_usage",   name:"Espace disque (C:)",  icon:"💾", pct:true},
+  {key:"cpu_temp",    name:"Température CPU",     icon:"🌡", pct:false, cap:100, unit:"°C"},
+  {key:"gpu_temp",    name:"Température GPU",     icon:"🌡", pct:false, cap:100, unit:"°C"},
+  {key:"net_down",    name:"Réseau ↓ Download",   icon:"⬇", pct:false, cap:5120, unit:"KB/s"},
+  {key:"net_up",      name:"Réseau ↑ Upload",     icon:"⬆", pct:false, cap:2048, unit:"KB/s"},
+  {key:"volume",      name:"Volume système",      icon:"🔊", pct:true},
+  {key:"off",         name:"Éteinte",             icon:"⚫", pct:true, isOff:true},
 ];
 function ledMetricDef(key){ return LED_METRICS.find(m=>m.key===key) || LED_METRICS[0]; }
 function ledValueFor(key, metricsData){
@@ -760,6 +802,27 @@ function ledValueFor(key, metricsData){
   if(raw===undefined || raw===null) return 0;
   if(def.pct) return Math.max(0, Math.min(100, Math.round(raw)));
   return Math.max(0, Math.min(100, Math.round((raw/def.cap)*100)));
+}
+// Retourne le texte à afficher sur la LED : la vraie valeur (°C, KB/s...) si
+// l'unité existe, sinon le pourcentage classique.
+function ledDisplayText(key, metricsData){
+  const def = ledMetricDef(key);
+  if(def.isOff) return "OFF";
+  const raw = metricsData?.[key];
+  if(raw===undefined || raw===null) return "—";
+  if(def.unit) return Math.round(raw)+def.unit;
+  return ledValueFor(key, metricsData)+"%";
+}
+// Dégradé fluide vert → jaune → rouge en fonction du pourcentage d'intensité
+// (0% = vert franc, 50% = jaune, 100% = rouge franc), interpolé en HSL pour
+// une transition continue plutôt que des paliers brusques.
+function ledGradientColor(pct){
+  const p = Math.max(0, Math.min(100, pct));
+  // Vert (hue 142) → Jaune (hue 48) → Rouge (hue 4), via interpolation linéaire de la teinte
+  const hue = p <= 50
+    ? 142 - (142-48)*(p/50)
+    : 48 - (48-4)*((p-50)/50);
+  return `hsl(${hue.toFixed(0)},85%,50%)`;
 }
 
 function getActiveProfileData() {
@@ -832,6 +895,8 @@ function connectWS() {
       if(m.type==="plugins") { pluginCatalog = m.data; pluginMeta = m.meta||[]; mergePluginActions(); renderPlugins(); }
       if(m.type==="toast") { toast(m.message); }
       if(m.type==="serial_status") { serialConnected = m.connected; serialPortName = m.port; if(document.getElementById("usbInfoModal")?.classList.contains("open")){ const slot=0; openUsbInfo(slot); } }
+      if(m.type==="protocol_saved") { handleProtocolSaved(m); }
+      if(m.type==="protocol_test_result") { handleProtocolTestResult(m); }
     };
     ws.onerror = () => {};
   } catch(e) {}
@@ -989,6 +1054,7 @@ function syncFromConfig() {
   syncProfile();
   buildLeds();
   renderProfiles();
+  loadProtocolFields();
 }
 function syncProfile() {
   const p = getActiveProfileData();
@@ -1010,12 +1076,14 @@ function buildBtns() {
     const b = getBtnData(i);
     const acts = (b[evType]||[]).length;
     const d = document.createElement("div");
-    d.className="hw-btn"+(selBtnIdx===i?" selected":"");
+    d.className="hw-btn"+(selBtnIdx===i?" selected":"")+(b.iconImage?" has-img":"");
     d.id="hwb-"+i;
     const iconHtml = b.iconImage
-      ? `<img class="btn-ic-img" src="${b.iconImage}" alt="">`
-      : `<div class="btn-ic">${b.icon||"⭐"}</div>`;
-    d.innerHTML=`<div class="btn-num">${i+1}</div>${acts?`<div class="btn-cnt">${acts}</div>`:""}${iconHtml}<div class="btn-nm">${b.label||"Btn "+(i+1)}</div><div class="btn-bar"></div>`;
+      ? `<img class="btn-ic-img" src="${b.iconImage}" alt="">
+         <div class="btn-img-overlay"></div>
+         <div class="btn-nm btn-nm-overlay">${b.label||"Btn "+(i+1)}</div>`
+      : `<div class="btn-ic">${b.icon||"⭐"}</div><div class="btn-nm">${b.label||"Btn "+(i+1)}</div>`;
+    d.innerHTML=`<div class="btn-num">${i+1}</div>${acts?`<div class="btn-cnt">${acts}</div>`:""}${iconHtml}<div class="btn-bar"></div>`;
     d.onclick = () => { selBtnIdx=i; selPotIdx=null; buildBtns(); openBtnDrawer(i); };
     d.addEventListener("contextmenu",e=>{e.preventDefault();pressBtn(i,"double_click");});
     d.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();pressBtn(i,"long_press");}});
@@ -1366,7 +1434,7 @@ function buildLeds(){
     const key=strips[i]?.metric || ["cpu","ram","gpu_usage","ssd_usage"][i];
     const def=ledMetricDef(key);
     return `<div class="led-strip" id="led-${i}" onclick="openLedPicker(${i})" title="Clique pour choisir la métrique affichée">
-      <div class="led-glow" id="led-glow-${i}" style="background:${def.color}30"></div>
+      <div class="led-glow" id="led-glow-${i}"></div>
       <span class="led-lbl" id="led-lbl-${i}">${def.icon} ${def.name}</span>
       <span class="led-pct" id="led-pct-${i}">—</span>
     </div>`;
@@ -1388,17 +1456,19 @@ function updateLeds(){
     const pctEl=document.getElementById("led-pct-"+i);
     const lblEl=document.getElementById("led-lbl-"+i);
     if(lblEl) lblEl.textContent = `${def.icon} ${def.name}`;
-    if(pctEl) pctEl.textContent = def.isOff ? "OFF" : pct+"%";
+    if(pctEl) pctEl.textContent = ledDisplayText(key, metrics);
     if(glow){
       if(def.isOff){
         glow.style.background = "#00000000";
         glow.style.opacity = "1";
       } else {
-        // Tout le rectangle s'allume : opacité proportionnelle à l'intensité
-        // (minimum 18% pour rester visible même à 0%, jusqu'à 95% à fond).
-        const alpha = Math.round(18 + (pct/100)*77);
-        glow.style.background = def.color + alpha.toString(16).padStart(2,"0");
-        glow.style.opacity = "1";
+        // Dégradé fluide vert → jaune → rouge selon l'intensité (pas une
+        // couleur fixe par métrique) : tout le rectangle s'allume avec une
+        // opacité proportionnelle à la valeur.
+        const color = ledGradientColor(pct);
+        const alpha = Math.round(20 + (pct/100)*70)/100;
+        glow.style.background = color;
+        glow.style.opacity = alpha;
       }
     }
   }
@@ -1707,6 +1777,7 @@ function switchView(id,btnEl) {
   const t=document.getElementById("viewTitle"); if(t) t.textContent=titles[id]||id;
   if(id==="profiles") renderProfiles();
   if(id==="plugins") renderPlugins();
+  if(id==="settings") loadProtocolFields();
 }
 function sbActive(el){document.querySelectorAll(".sb-btn").forEach(b=>b.classList.remove("active"));el.classList.add("active");}
 
@@ -1738,6 +1809,80 @@ function renderPorts(ports){
   if(el) el.innerHTML=ports.length?ports.map(p=>`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="document.getElementById('serialPortInput').value='${p}'">${p}</span>`).join(" · "):"Aucun port détecté";
   const el2=document.getElementById("usbPortsList");
   if(el2) el2.innerHTML = ports.length ? "Ports disponibles : "+ports.join(", ") : "Aucun port série détecté sur cette machine.";
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROTOCOLE ESP32 — config des trames série (entrantes et sortantes)
+// ═══════════════════════════════════════════════════════════════
+const PROTO_DEFAULTS = {
+  in_press:        '{"t":"press","i":{i}}',
+  in_long_press:   '{"t":"long_press","i":{i}}',
+  in_double_click: '{"t":"double_click","i":{i}}',
+  in_release:      '{"t":"release","i":{i}}',
+  in_pot:          '{"t":"pot","i":{i},"v":{v}}',
+  out_led:         '{"t":"led","s":{i},"v":{v}}',
+};
+function getProtocol(){
+  return cfg.protocol || {...PROTO_DEFAULTS};
+}
+// Remplit les champs de saisie avec la config actuelle (appelé à l'ouverture
+// des paramètres et à chaque réception de config depuis le backend).
+function loadProtocolFields(){
+  const proto = getProtocol();
+  for(const key of Object.keys(PROTO_DEFAULTS)){
+    const el = document.getElementById("proto_"+key);
+    if(el) el.value = proto[key] || PROTO_DEFAULTS[key];
+  }
+}
+function saveProtocol(){
+  const proto = {};
+  for(const key of Object.keys(PROTO_DEFAULTS)){
+    const el = document.getElementById("proto_"+key);
+    proto[key] = (el?.value || PROTO_DEFAULTS[key]).trim();
+  }
+  cfg.protocol = proto;
+  wsSend({type:"save_protocol", protocol:proto});
+  const msg = document.getElementById("protocolSaveMsg");
+  if(msg){ msg.textContent="⏳ Validation en cours..."; msg.style.color="var(--text3)"; }
+}
+function resetProtocolDefaults(){
+  if(!confirm("Revenir au protocole JSON par défaut ? Tes patrons personnalisés seront perdus.")) return;
+  cfg.protocol = {...PROTO_DEFAULTS};
+  loadProtocolFields();
+  saveProtocol();
+  toast("↺ Protocole réinitialisé");
+}
+function simulateEsp32Frame(){
+  const raw = document.getElementById("protoTestSample")?.value || "";
+  if(!raw.trim()){ toast("⚠ Entre une trame à tester"); return; }
+  wsSend({type:"simulate_esp32_frame", raw});
+  const res = document.getElementById("protoTestResult");
+  if(res){ res.textContent="⏳ Envoi en cours..."; res.style.color="var(--text3)"; }
+}
+// Réponses du backend pour la config protocole
+function handleProtocolSaved(m){
+  const msg = document.getElementById("protocolSaveMsg");
+  if(!msg) return;
+  if(m.ok){
+    msg.textContent="✓ Protocole enregistré avec succès";
+    msg.style.color="var(--green)";
+    toast("✓ Protocole ESP32 enregistré");
+  } else {
+    const errs = Object.entries(m.errors||{}).map(([k,v])=>`${k}: ${v}`).join(" · ");
+    msg.textContent="⚠ Erreur(s) dans le patron — "+errs;
+    msg.style.color="var(--red)";
+  }
+}
+function handleProtocolTestResult(m){
+  const res = document.getElementById("protoTestResult");
+  if(!res) return;
+  if(m.ok){
+    res.textContent="✓ Trame reconnue — "+JSON.stringify(m.groups);
+    res.style.color="var(--green)";
+  } else {
+    res.textContent="✗ "+(m.error||"Aucun patron ne correspond à cette trame");
+    res.style.color="var(--red)";
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
