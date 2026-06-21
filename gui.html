@@ -93,16 +93,15 @@ html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter
 /* Boutons */
 .btn-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:12px}
 .hw-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;aspect-ratio:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:all .12s;position:relative;overflow:hidden;padding:6px;user-select:none}
-.hw-btn.has-img{padding:0}
-.btn-ic-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
-.btn-img-overlay{position:absolute;left:0;right:0;bottom:0;height:55%;background:linear-gradient(to top,#000000b0,#00000000);pointer-events:none}
-.btn-nm-overlay{position:absolute;left:4px;right:4px;bottom:5px;color:#fff;text-shadow:0 1px 3px #000000a0;z-index:1}
 .hw-btn:hover{border-color:var(--border3);transform:translateY(-1px);box-shadow:0 4px 12px #00000030}
 .hw-btn.pressed{border-color:var(--accent);transform:scale(.94);box-shadow:0 0 16px var(--accent-glow)}
 .hw-btn.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-glow)}
 .btn-num{position:absolute;top:5px;left:6px;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace;z-index:2}
 .btn-ic{font-size:17px;line-height:1}
-.btn-ic-img{width:28px;height:28px;object-fit:cover;border-radius:6px;flex-shrink:0}
+/* Image personnalisée : petite vignette en haut-gauche du bouton, pas en
+   plein cadre — le numéro reste lisible à côté, et le nom du bouton
+   garde sa place normale en dessous comme avec un emoji. */
+.btn-ic-img{width:24px;height:24px;object-fit:cover;border-radius:5px;flex-shrink:0;align-self:flex-start;margin-left:2px;margin-top:2px}
 .btn-nm{font-size:8px;color:var(--text2);text-align:center;line-height:1.3;font-weight:500}
 .btn-bar{position:absolute;bottom:0;left:6px;right:6px;height:2px;border-radius:2px;background:var(--accent);opacity:.35;transition:opacity .2s;z-index:2}
 .hw-btn.selected .btn-bar,.hw-btn.pressed .btn-bar{opacity:1}
@@ -117,11 +116,13 @@ html,body{height:100%;background:var(--bg0);color:var(--text);font-family:'Inter
 .led-strip .led-lbl,.led-strip .led-pct{position:relative;z-index:1}
 .led-lbl{font-size:9px;color:#fff;letter-spacing:.5px;text-transform:uppercase;font-weight:700;text-shadow:0 1px 3px #00000080}
 .led-pct{font-size:10px;font-weight:700;margin-left:auto;font-family:'JetBrains Mono',monospace;transition:color .4s;color:#fff;text-shadow:0 1px 3px #00000080}
-.usb-c{width:16px;height:100%;align-self:stretch;background:var(--bg0);border-radius:3px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
-.usb-c:hover{border-color:var(--accent-glow);filter:brightness(1.2)}
-.usb-c.active{border-color:var(--green)}
-.usb-c i{display:block;width:9px;height:20px;background:var(--bg3);border-radius:2px;border:1px solid var(--border);transition:background .3s}
-.usb-c.active i{background:var(--green);box-shadow:0 0 6px var(--green)}
+.usb-c{width:18px;height:100%;align-self:stretch;background:linear-gradient(160deg,#1a1c24,#0a0b0e);border-radius:4px;border:1px solid var(--border2);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;position:relative;box-shadow:inset 0 1px 0 #ffffff08,inset 0 -1px 2px #00000060}
+.usb-c:hover{border-color:var(--accent-glow);box-shadow:inset 0 1px 0 #ffffff10,inset 0 -1px 2px #00000060,0 0 0 1px var(--accent-glow)}
+.usb-c.active{border-color:#22c55e60}
+.usb-c .usb-status{position:absolute;top:4px;width:5px;height:5px;border-radius:50%;background:#3a3f4d;transition:all .3s}
+.usb-c.active .usb-status{background:var(--green);box-shadow:0 0 5px var(--green)}
+.usb-c i{display:block;width:7px;height:60%;max-height:26px;background:linear-gradient(180deg,#4a4f5e,#2a2d36);border-radius:1px;border:1px solid #00000080;box-shadow:inset 1px 0 0 #ffffff20}
+.usb-c.active i{background:linear-gradient(180deg,#34d37e,#16a34a);box-shadow:inset 1px 0 0 #ffffff30,0 0 8px #22c55e50}
 
 /* Knobs */
 .pots-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
@@ -732,7 +733,7 @@ let cfg = {
 };
 let activeProfile = "default";
 let selBtnIdx = null, selPotIdx = null, evType = "press";
-let potAngles = [220,220,220,220];
+let potPct = [0,0,0,0];
 let metrics = {};
 let logs = [], logFilter = "all";
 let ws = null, theme = "dark";
@@ -894,7 +895,7 @@ function connectWS() {
       if(m.type==="picked_path") { applyPickedPath(m.field, m.path); }
       if(m.type==="plugins") { pluginCatalog = m.data; pluginMeta = m.meta||[]; mergePluginActions(); renderPlugins(); }
       if(m.type==="toast") { toast(m.message); }
-      if(m.type==="serial_status") { serialConnected = m.connected; serialPortName = m.port; if(document.getElementById("usbInfoModal")?.classList.contains("open")){ const slot=0; openUsbInfo(slot); } }
+      if(m.type==="serial_status") { serialConnected = m.connected; serialPortName = m.port; updateUsbStatus(); if(document.getElementById("usbInfoModal")?.classList.contains("open")){ const slot=0; openUsbInfo(slot); } }
       if(m.type==="protocol_saved") { handleProtocolSaved(m); }
       if(m.type==="protocol_test_result") { handleProtocolTestResult(m); }
     };
@@ -1076,14 +1077,12 @@ function buildBtns() {
     const b = getBtnData(i);
     const acts = (b[evType]||[]).length;
     const d = document.createElement("div");
-    d.className="hw-btn"+(selBtnIdx===i?" selected":"")+(b.iconImage?" has-img":"");
+    d.className="hw-btn"+(selBtnIdx===i?" selected":"");
     d.id="hwb-"+i;
     const iconHtml = b.iconImage
-      ? `<img class="btn-ic-img" src="${b.iconImage}" alt="">
-         <div class="btn-img-overlay"></div>
-         <div class="btn-nm btn-nm-overlay">${b.label||"Btn "+(i+1)}</div>`
-      : `<div class="btn-ic">${b.icon||"⭐"}</div><div class="btn-nm">${b.label||"Btn "+(i+1)}</div>`;
-    d.innerHTML=`<div class="btn-num">${i+1}</div>${acts?`<div class="btn-cnt">${acts}</div>`:""}${iconHtml}<div class="btn-bar"></div>`;
+      ? `<img class="btn-ic-img" src="${b.iconImage}" alt="">`
+      : `<div class="btn-ic">${b.icon||"⭐"}</div>`;
+    d.innerHTML=`<div class="btn-num">${i+1}</div>${acts?`<div class="btn-cnt">${acts}</div>`:""}${iconHtml}<div class="btn-nm">${b.label||"Btn "+(i+1)}</div><div class="btn-bar"></div>`;
     d.onclick = () => { selBtnIdx=i; selPotIdx=null; buildBtns(); openBtnDrawer(i); };
     d.addEventListener("contextmenu",e=>{e.preventDefault();pressBtn(i,"double_click");});
     d.addEventListener("mousedown",e=>{if(e.button===1){e.preventDefault();pressBtn(i,"long_press");}});
@@ -1105,6 +1104,7 @@ function flashBtn(i) { const el=document.getElementById("hwb-"+i); if(el){el.cla
 // ═══════════════════════════════════════════════════════════════
 function buildPots() {
   const row=document.getElementById("potsRow"); row.innerHTML="";
+  const r = 21, circumference = 2 * Math.PI * r;
   for(let i=0;i<4;i++) {
     const p=getPotData(i);
     const d=document.createElement("div"); d.className="hw-pot";
@@ -1112,16 +1112,23 @@ function buildPots() {
       <defs><radialGradient id="kg${i}" cx="38%" cy="32%"><stop offset="0%" stop-color="#252837"/><stop offset="100%" stop-color="#0c0d10"/></radialGradient></defs>
       <circle cx="27" cy="27" r="25" fill="url(#kg${i})" stroke="#ffffff08" stroke-width="1"/>
       <circle cx="27" cy="27" r="21" fill="#07080b" stroke="#ffffff05" stroke-width="1"/>
-      <path id="ka${i}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
-      <line id="kl${i}" x1="27" y1="27" x2="27" y2="7" stroke="#818cf8" stroke-width="2" stroke-linecap="round" transform="rotate(220,27,27)"/>
+      <!-- Track de fond : cercle complet toujours visible, faible opacité -->
+      <circle cx="27" cy="27" r="${r}" fill="none" stroke="#ffffff14" stroke-width="2.5"/>
+      <!-- Anneau de progression : cercle complet dont on masque une portion
+           via stroke-dasharray/offset — garantit un tour à 360° plein à 100%,
+           sans le calcul manuel d'arc qui laissait un espace résiduel. -->
+      <circle id="ka${i}" cx="27" cy="27" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
+        stroke-linecap="round" transform="rotate(-90,27,27)"
+        stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}"/>
+      <line id="kl${i}" x1="27" y1="27" x2="27" y2="7" stroke="#818cf8" stroke-width="2" stroke-linecap="round" transform="rotate(0,27,27)"/>
       <circle cx="27" cy="27" r="2.5" fill="var(--accent)"/>
     </svg>
     <div class="pot-lbl">${p.name||"Pot "+(i+1)}</div>
     <div class="pot-val" id="pv${i}">0%</div>`;
     d.addEventListener("wheel",e=>{e.preventDefault();turnPot(i,e.deltaY>0?-4:4);},{passive:false});
     let drag=false,sy=0,sa=0;
-    d.addEventListener("mousedown",e=>{drag=true;sy=e.clientY;sa=potAngles[i];});
-    const mv=e=>{if(!drag)return;potAngles[i]=Math.max(220,Math.min(490,sa+(sy-e.clientY)*1.4));updateKnob(i);addLog("rx","pot",`POT${i+1} ${getPct(i)}%`);};
+    d.addEventListener("mousedown",e=>{drag=true;sy=e.clientY;sa=potPct[i];});
+    const mv=e=>{if(!drag)return;potPct[i]=Math.max(0,Math.min(100,sa+(sy-e.clientY)*0.6));updateKnob(i);addLog("rx","pot",`POT${i+1} ${getPct(i)}%`);};
     const mu=()=>{if(drag){drag=false;if(selPotIdx===i)openPotDrawer(i);}};
     window.addEventListener("mousemove",mv);
     window.addEventListener("mouseup",mu);
@@ -1130,17 +1137,22 @@ function buildPots() {
     updateKnob(i);
   }
 }
-function turnPot(i,d){potAngles[i]=Math.max(220,Math.min(490,potAngles[i]+d));updateKnob(i);toast(`POT${i+1} → ${getPct(i)}%`);}
-function animatePot(i,pct){potAngles[i]=220+(pct/100)*270;updateKnob(i);}
-function getPct(i){return Math.round((potAngles[i]-220)/270*100);}
+function turnPot(i,delta){potPct[i]=Math.max(0,Math.min(100,potPct[i]+delta));updateKnob(i);toast(`POT${i+1} → ${getPct(i)}%`);}
+function animatePot(i,pct){potPct[i]=Math.max(0,Math.min(100,pct));updateKnob(i);}
+function getPct(i){return Math.round(potPct[i]);}
 function updateKnob(i){
-  const kl=document.getElementById("kl"+i),ka=document.getElementById("ka"+i);
-  if(kl) kl.setAttribute("transform",`rotate(${potAngles[i]},27,27)`);
+  const r = 21, circumference = 2 * Math.PI * r;
+  const pct = getPct(i) / 100;
+  const kl=document.getElementById("kl"+i), ka=document.getElementById("ka"+i);
+  // L'aiguille fait un tour quasi complet (270°, comme un potentiomètre
+  // physique réel) pour rester lisible visuellement, indépendamment de
+  // l'anneau qui lui va bien jusqu'à 360° plein.
+  if(kl) kl.setAttribute("transform",`rotate(${220+pct*270},27,27)`);
   if(ka){
-    const pct=(potAngles[i]-220)/270,r=21,cx=27,cy=27;
-    const s=(220-90)*Math.PI/180,en=s+pct*270*Math.PI/180;
-    const x1=cx+r*Math.cos(s),y1=cy+r*Math.sin(s),x2=cx+r*Math.cos(en),y2=cy+r*Math.sin(en);
-    ka.setAttribute("d",`M${x1},${y1} A${r},${r} 0 ${pct*270>180?1:0} 1 ${x2},${y2}`);
+    // dashoffset à 0 = cercle plein affiché ; à circumference = rien affiché.
+    // Garantit un anneau à 360° exact quand pct=1, sans aucun espace résiduel.
+    ka.style.transition = "stroke-dashoffset .25s ease";
+    ka.setAttribute("stroke-dashoffset", String(circumference * (1 - pct)));
   }
   const pv=document.getElementById("pv"+i); if(pv) pv.textContent=getPct(i)+"%";
 }
@@ -1441,10 +1453,11 @@ function buildLeds(){
   };
   zone.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:5px">${col(0)}${col(1)}</div>
-    <div class="usb-c" id="usb-0" onclick="openUsbInfo(0)" title="Port USB 1"><i></i></div>
-    <div class="usb-c" id="usb-1" onclick="openUsbInfo(1)" title="Port USB 2"><i></i></div>
+    <div class="usb-c" id="usb-0" onclick="openUsbInfo(0)" title="Port USB 1"><div class="usb-status"></div><i></i></div>
+    <div class="usb-c" id="usb-1" onclick="openUsbInfo(1)" title="Port USB 2"><div class="usb-status"></div><i></i></div>
     <div style="display:flex;flex-direction:column;gap:5px">${col(2)}${col(3)}</div>`;
   updateLeds();
+  updateUsbStatus();
 }
 function updateLeds(){
   const strips=getLedStrips();
@@ -1513,6 +1526,13 @@ function pickLedMetric(i,key){
 // ═══════════════════════════════════════════════════════════════
 // PORTS USB — infos de connexion au clic
 // ═══════════════════════════════════════════════════════════════
+function updateUsbStatus(){
+  // Seul le port réellement utilisé par la liaison série (usb-0, le premier
+  // connecteur) reflète l'état de connexion réel ; le second reste neutre
+  // tant qu'on ne gère qu'une seule liaison ESP32 à la fois.
+  const u0 = document.getElementById("usb-0");
+  if(u0) u0.classList.toggle("active", !!serialConnected);
+}
 function openUsbInfo(slot){
   let modal = document.getElementById("usbInfoModal");
   if(!modal){
