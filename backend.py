@@ -838,104 +838,80 @@ class ProfileOverlayWindow:
             except: pass
             self._popup = None
 
+        # ── Constantes de layout ───────────────────────────────────────────
+        bg="#14151b"; card="#1c1f29"; accent="#6366f1"; fg="#f1f5f9"; sub="#94a3b8"; pot_bg="#1a1d27"
+        CELL=52; PAD=10; GAP=3; COLS=4
+        # Largeur fixe : 4 cellules × 52 + 3 gaps × 3 + marges × 2
+        W = COLS*CELL + (COLS-1)*GAP + PAD*2  # = 257
+        # Hauteur calculée manuellement (pas de winfo_reqheight, non fiable sur Windows) :
+        #   header(30) + sep(1) + pady(6) + 2 rangées boutons(52×2 + gap) + sep(1) + pady(6) + potards(52) + padding bas(10)
+        H = 30 + 1 + 6 + (CELL*2 + GAP) + 6 + 1 + 6 + CELL + PAD
+
+        sw = root.winfo_screenwidth(); sh = root.winfo_screenheight()
+        X = sw - W - 20; Y = sh - H - 60
+
         win = tk.Toplevel(root)
         self._popup = win
         win.overrideredirect(True)
         win.attributes("-topmost", True)
-        try: win.attributes("-alpha", 0.95)
+        try: win.attributes("-alpha", 0.93)
         except: pass
+        win.configure(bg=bg, highlightbackground=accent, highlightcolor=accent, highlightthickness=1)
 
-        bg="#14151b"; card="#1c1f29"; accent="#6366f1"; fg="#f1f5f9"; sub="#94a3b8"; pot_bg="#1a1d27"
-        win.configure(bg=bg)
-
-        cell_w, cell_h = 52, 52
-        pad = 8
-        width = max(4 * cell_w + 3 * 3 + pad * 2, 240)
-
-        sw = win.winfo_screenwidth(); sh = win.winfo_screenheight()
-
-        # Cacher pendant la construction → évite le flash/trait bleu
-        win.withdraw()
-        win.geometry(f"{width}x10-20-60")  # position hors vue, redéfinie après mesure
-        win.config(highlightbackground=accent, highlightcolor=accent, highlightthickness=1)
+        # Positionner directement à la bonne taille — pas de flash car withdraw/deiconify
+        # sur Windows avec overrideredirect est instable ; on place directement hors écran
+        # puis on déplace. En pratique Tk ne dessine pas avant mainloop.
+        win.geometry(f"{W}x{H}+{X}+{Y}")
 
         # ── Header ─────────────────────────────────────────────────────────
-        header = tk.Frame(win, bg=bg)
-        header.pack(fill="x", padx=pad, pady=(8, 4))
-        tk.Label(header, text="●", fg=accent, bg=bg, font=("Segoe UI", 8)).pack(side="left")
-        tk.Label(header, text=profile.get("name", "Profil"), fg=fg, bg=bg,
-                 font=("Segoe UI", 11, "bold")).pack(side="left", padx=(5, 0))
+        hdr = tk.Frame(win, bg=bg)
+        hdr.pack(fill="x", padx=PAD, pady=(8, 4))
+        tk.Label(hdr, text="●", fg=accent, bg=bg, font=("Segoe UI", 8)).pack(side="left")
+        tk.Label(hdr, text=profile.get("name", "Profil"), fg=fg, bg=bg,
+                 font=("Segoe UI", 10, "bold")).pack(side="left", padx=(5, 0))
+        tk.Frame(win, bg=accent, height=1).pack(fill="x", padx=PAD)
 
-        tk.Frame(win, bg=accent, height=1).pack(fill="x", padx=pad, pady=(0, 6))
-
-        # ── Grille 4×2 boutons ─────────────────────────────────────────────
-        btn_frame = tk.Frame(win, bg=bg)
-        btn_frame.pack(padx=pad, pady=(0, 4))
-
+        # ── Grille boutons 4×2 ─────────────────────────────────────────────
+        bf = tk.Frame(win, bg=bg)
+        bf.pack(padx=PAD, pady=(6, 0))
         buttons = profile.get("buttons", {})
         for i in range(8):
-            b = buttons.get(str(i), {})
-            row, col = divmod(i, 4)
-
-            cell = tk.Frame(btn_frame, bg=card, width=cell_w, height=cell_h,
-                            highlightthickness=1, highlightbackground="#ffffff18")
-            cell.grid(row=row, column=col, padx=2, pady=2)
+            b   = buttons.get(str(i), {})
+            r,c = divmod(i, COLS)
+            cell = tk.Frame(bf, bg=card, width=CELL, height=CELL)
+            cell.grid(row=r, column=c, padx=GAP//2+1, pady=GAP//2+1)
             cell.grid_propagate(False)
+            tk.Label(cell, text=b.get("icon","") or "⬜", fg=fg, bg=card,
+                     font=("Segoe UI Emoji", 13)).place(relx=.5, rely=.35, anchor="center")
+            tk.Label(cell, text=(b.get("label") or f"Btn {i+1}")[:9],
+                     fg=sub, bg=card, font=("Segoe UI", 6)).place(relx=.5, rely=.76, anchor="center")
 
-            icon  = b.get("icon", "⭐") or "⭐"
-            label = (b.get("label") or f"Btn {i+1}")[:9]
-
-            tk.Label(cell, text=icon,  fg=fg,  bg=card, font=("Segoe UI Emoji", 14)).place(relx=.5, rely=.36, anchor="center")
-            tk.Label(cell, text=label, fg=sub, bg=card, font=("Segoe UI", 6)).place(relx=.5, rely=.78, anchor="center")
-
-        # Séparateur boutons / potards
-        tk.Frame(win, bg="#ffffff14", height=1).pack(fill="x", padx=pad, pady=(2, 4))
+        # ── Séparateur ─────────────────────────────────────────────────────
+        tk.Frame(win, bg="#2a2d3a", height=1).pack(fill="x", padx=PAD, pady=(6, 4))
 
         # ── Rangée potards ─────────────────────────────────────────────────
-        pot_frame = tk.Frame(win, bg=bg)
-        pot_frame.pack(padx=pad, pady=(0, 8))
-
-        pot_action_short = {
-            "volume_system": "Vol. sys", "volume_app": "Vol. app",
-            "brightness": "Luminosité", "custom": "Custom",
-            "scroll": "Scroll", "zoom_level": "Zoom",
-            "media_seek": "Seek", "playback_speed": "Speed",
-            "discord_volume": "Discord", "spotify_volume": "Spotify",
-            "game_volume": "Jeu", "mic_volume": "Micro",
-            "obs_volume": "OBS vol", "led_strip_color": "LED",
+        POT_LABELS = {
+            "volume_system":"Vol. sys","volume_app":"Vol. app","brightness":"Luminosité",
+            "scroll":"Scroll","zoom_level":"Zoom","media_seek":"Seek",
+            "discord_volume":"Discord","spotify_volume":"Spotify","game_volume":"Jeu",
+            "mic_volume":"Micro","obs_volume":"OBS","led_strip_color":"LED","custom":"Custom",
         }
+        pf = tk.Frame(win, bg=bg)
+        pf.pack(padx=PAD, pady=(0, PAD))
         pots = profile.get("pots", {})
-        for i in range(4):
-            p = pots.get(str(i), {})
-            pot_name   = (p.get("name") or f"Pot {i+1}")[:9]
-            pot_action = pot_action_short.get(p.get("action", ""), p.get("action", "")[:8] or "—")
-
-            cell = tk.Frame(pot_frame, bg=pot_bg, width=cell_w, height=cell_h,
-                            highlightthickness=1, highlightbackground="#ffffff14")
-            cell.grid(row=0, column=i, padx=2, pady=0)
+        for i in range(COLS):
+            p      = pots.get(str(i), {})
+            name   = (p.get("name") or f"Pot {i+1}")[:8]
+            action = POT_LABELS.get(p.get("action",""), p.get("action","")[:8] or "—")
+            cell = tk.Frame(pf, bg=pot_bg, width=CELL, height=CELL)
+            cell.grid(row=0, column=i, padx=GAP//2+1)
             cell.grid_propagate(False)
-
-            # Mini-cercle symbolisant le potard
-            try:
-                canvas = tk.Canvas(cell, width=22, height=22, bg=pot_bg,
-                                   highlightthickness=0, bd=0)
-                canvas.place(relx=.5, rely=.25, anchor="center")
-                canvas.create_oval(2, 2, 20, 20, outline=accent, width=1.5, fill="#0c0d10")
-                canvas.create_oval(9, 9, 13, 13, fill=accent, outline="")
-            except Exception:
-                tk.Label(cell, text="◎", fg=accent, bg=pot_bg,
-                         font=("Segoe UI", 10)).place(relx=.5, rely=.25, anchor="center")
-
-            tk.Label(cell, text=pot_name,   fg=fg,  bg=pot_bg, font=("Segoe UI", 6, "bold")).place(relx=.5, rely=.62, anchor="center")
-            tk.Label(cell, text=pot_action, fg=sub, bg=pot_bg, font=("Segoe UI", 5)).place(relx=.5, rely=.83, anchor="center")
-
-        # Mesure la hauteur réelle puis affiche d'un coup (sans flash)
-        win.update_idletasks()
-        height = win.winfo_reqheight()
-        x = sw - width - 20
-        y = sh - height - 60
-        win.geometry(f"{width}x{height}+{x}+{y}")
-        win.deiconify()
+            tk.Label(cell, text="◎", fg=accent, bg=pot_bg,
+                     font=("Segoe UI", 16)).place(relx=.5, rely=.32, anchor="center")
+            tk.Label(cell, text=name,   fg=fg,  bg=pot_bg,
+                     font=("Segoe UI", 6, "bold")).place(relx=.5, rely=.65, anchor="center")
+            tk.Label(cell, text=action, fg=sub, bg=pot_bg,
+                     font=("Segoe UI", 5)).place(relx=.5, rely=.82, anchor="center")
 
         # ── Fermeture après 3 s ────────────────────────────────────────────
         def _close():
