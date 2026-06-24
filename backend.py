@@ -1,23 +1,16 @@
 """
-Imperium Backend v15.2
+MacroDeck Backend v15.1
 - Console 100% cachée (SW_HIDE + FreeConsole)
 - Pas d'ouverture automatique du navigateur au démarrage
 - Profils indépendants avec création/suppression/renommage
 - Action switch_profile
 - Serveur HTTP silencieux sur 8766
 - WebSocket sur 8765
-- Auto-updater via GitHub Releases
 """
 import sys, os, ctypes, threading, time, asyncio, json, subprocess, re
 import webbrowser, shutil, glob, logging, datetime
 from pathlib import Path
 from typing import Optional
-
-# ── VERSION ──────────────────────────────────────────────────────────────────
-# Injectée automatiquement par le CI lors du build (voir build.yml).
-# En dev local, reste "dev" pour ne jamais déclencher de mise à jour.
-APP_VERSION = "dev"
-GITHUB_REPO = "tuturpotter-web/Imperium"  # owner/repo
 
 # ── CACHER CONSOLE ──────────────────────────────────────────────────────────
 if sys.platform == "win32":
@@ -146,7 +139,7 @@ log = logging.getLogger("MD")
 
 WS_PORT   = 8765
 HTTP_PORT = 8766
-CONFIG_PATH = Path(os.path.expanduser("~")) / ".imperium" / "config.json"
+CONFIG_PATH = Path(os.path.expanduser("~")) / ".macrodeck" / "config.json"
 CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # ── VOLUME ───────────────────────────────────────────────────────────────────
@@ -317,19 +310,14 @@ DEFAULT_CONFIG = {
 }
 
 def pattern_to_regex(pattern: str) -> "re.Pattern":
-    """Convertit un patron du type 'BTN{i}:PRESS' ou '{"t":"press","i":{i}}'
-    en regex capturant {i} et {v} comme groupes nommés.
-    On découpe sur les placeholders AVANT d'escaper, pour que les accolades
-    JSON du patron ne soient jamais confondues avec les placeholders."""
-    PLACEHOLDER_I = "\x00I\x00"
-    PLACEHOLDER_V = "\x00V\x00"
-    # Remplace les placeholders par des tokens neutres hors re.escape
-    tmp = pattern.replace("{i}", PLACEHOLDER_I).replace("{v}", PLACEHOLDER_V)
-    # Échappe tout le reste (accolades JSON, guillemets, points, etc.)
-    escaped = re.escape(tmp)
-    # Remet les groupes de capture à la place des tokens
-    escaped = escaped.replace(re.escape(PLACEHOLDER_I), r"(?P<i>-?\d+)")
-    escaped = escaped.replace(re.escape(PLACEHOLDER_V), r"(?P<v>-?\d+)")
+    """Convertit un patron du type 'BTN{i}:PRESS' en regex capturant {i} et {v}
+    comme groupes nommés, pour parser les trames brutes reçues de l'ESP32
+    quel que soit le format texte choisi par l'utilisateur (pas que du JSON)."""
+    # Échappe tout le texte du patron sauf nos placeholders, qu'on remplace
+    # ensuite par des groupes de capture numériques.
+    escaped = re.escape(pattern)
+    escaped = escaped.replace(re.escape("{i}"), r"(?P<i>-?\d+)")
+    escaped = escaped.replace(re.escape("{v}"), r"(?P<v>-?\d+)")
     return re.compile("^"+escaped+"$")
 
 def pattern_format(pattern: str, i=None, v=None) -> str:
@@ -391,7 +379,7 @@ class ActionEngine:
 
             elif action == "obs_volume":
                 # Volume d'une source OBS (0-100 → -100dB..0dB approximatif)
-                self._obs_pot_volume(pot_cfg.get("source","Mic/Aux"), val)
+                self._obs(pot_cfg.get("source","Mic/Aux"), val)
 
             elif action == "scroll":
                 # Défilement proportionnel à l'écart depuis le dernier appel
@@ -454,8 +442,7 @@ class ActionEngine:
         except Exception as e:
             log.error(f"Pot action '{action}': {e}")
 
-    def _obs_pot_volume(self, source, val):
-        """Règle le volume d'une source OBS via WebSocket (appelé depuis run_pot)."""
+    def _obs(self, source, val):
         try:
             import websocket as _ws
             db = round((val/100)*100 - 100, 1)  # 0-100 → -100dB..0dB
@@ -681,7 +668,7 @@ class ActionEngine:
 
 def _timer(s, lbl):
     time.sleep(s)
-    try: ctypes.windll.user32.MessageBoxW(0,lbl,"Imperium ⏱",0x40|0x1000)
+    try: ctypes.windll.user32.MessageBoxW(0,lbl,"MacroDeck ⏱",0x40|0x1000)
     except: pass
 
 # ── MÉTRIQUES ────────────────────────────────────────────────────────────────
@@ -838,14 +825,13 @@ class ProfileOverlayWindow:
             except: pass
             self._popup = None
 
-        BG   = "#0d0e12"; CARD = "#1c1f29"; ACC  = "#6366f1"
-        FG   = "#f1f5f9"; FG3  = "#94a3b8"; BG3  = "#181b22"
-        BDR  = "#ffffff18"; BG4  = "#1e212b"
+        BG  = "#0d0e12"; CARD = "#1c1f29"; ACC = "#6366f1"
+        FG  = "#f1f5f9"; FG3  = "#94a3b8"; BG3 = "#181b22"
+        BG4 = "#1e212b"; BDR  = "#2a2d3a"
 
         CELL=56; PAD=10; GAP=4; COLS=4
-        # Hauteur fixe calculée : header(38) + sep(1) + boutons(56*2+4) + sep(1) + potards(56) + marges
         W = COLS*CELL + (COLS-1)*GAP + PAD*2
-        H = 38 + 1 + 8 + (CELL*2+GAP) + 8 + 1 + 8 + CELL + 12
+        H = 38 + 1 + 8 + CELL*2 + GAP + 8 + 1 + 8 + CELL + 12
 
         sw = root.winfo_screenwidth(); sh = root.winfo_screenheight()
         X = sw - W - 20;  Y = sh - H - 60
@@ -856,31 +842,25 @@ class ProfileOverlayWindow:
         win.attributes("-topmost", True)
         try: win.attributes("-alpha", 0.97)
         except: pass
-        win.configure(bg=BG)
+        # Fond accent = bordure 1px visible tout autour
+        win.configure(bg=ACC)
         win.geometry(f"{W}x{H}+{X}+{Y}")
 
-        # ── Bordure 1px accent via Canvas plein fond ───────────────────────
-        cv_border = tk.Canvas(win, width=W, height=H, highlightthickness=0, bg=ACC)
-        cv_border.place(x=0, y=0)
-        cv_border.create_rectangle(1, 1, W-1, H-1, fill=BG, outline="")
-
-        # Frame principale par-dessus le canvas
+        # Frame principal avec marge 1px → révèle la bordure accent du fond
         main = tk.Frame(win, bg=BG)
-        main.place(x=1, y=1, width=W-2, height=H-2)
+        main.pack(padx=1, pady=1, fill="both", expand=True)
 
         # ── Header ────────────────────────────────────────────────────────
         hdr = tk.Frame(main, bg=BG)
-        hdr.pack(fill="x", padx=PAD, pady=(8,4))
-        # Pastille accent
+        hdr.pack(fill="x", padx=PAD, pady=(7,4))
         dot = tk.Canvas(hdr, width=8, height=8, bg=BG, highlightthickness=0)
-        dot.pack(side="left", pady=2)
-        dot.create_oval(0,0,8,8, fill=ACC, outline="")
+        dot.pack(side="left", pady=1)
+        dot.create_oval(0, 0, 8, 8, fill=ACC, outline="")
         tk.Label(hdr, text=profile.get("name","Profil"), fg=FG, bg=BG,
                  font=("Segoe UI",10,"bold")).pack(side="left", padx=(6,0))
         tk.Label(hdr, text="PROFIL", fg=ACC, bg=BG,
                  font=("Segoe UI",7,"bold")).pack(side="right")
-        # Séparateur
-        tk.Frame(main, bg=ACC, height=1).pack(fill="x")
+        tk.Frame(main, bg=BDR, height=1).pack(fill="x")
 
         # ── Grille boutons 4×2 ────────────────────────────────────────────
         bf = tk.Frame(main, bg=BG)
@@ -889,10 +869,9 @@ class ProfileOverlayWindow:
         for i in range(8):
             b   = buttons.get(str(i), {})
             r,c = divmod(i, COLS)
-            # Bordure simulée : frame BDR de 1px, frame CARD dedans
-            border = tk.Frame(bf, bg=BDR)
-            border.grid(row=r, column=c, padx=GAP//2, pady=GAP//2)
-            cell = tk.Frame(border, bg=CARD, width=CELL-2, height=CELL-2)
+            outer = tk.Frame(bf, bg=BDR)
+            outer.grid(row=r, column=c, padx=GAP//2, pady=GAP//2)
+            cell = tk.Frame(outer, bg=CARD, width=CELL-2, height=CELL-2)
             cell.pack(padx=1, pady=1)
             cell.pack_propagate(False)
             icon  = b.get("icon","") or "●"
@@ -919,20 +898,16 @@ class ProfileOverlayWindow:
             p      = pots.get(str(i), {})
             name   = (p.get("name") or f"Pot {i+1}")[:8]
             action = POT_LABELS.get(p.get("action",""), (p.get("action","") or "—")[:8])
-
-            border = tk.Frame(pf, bg=BDR)
-            border.grid(row=0, column=i, padx=GAP//2)
-            cell = tk.Frame(border, bg=BG3, width=CELL-2, height=CELL-2)
+            outer = tk.Frame(pf, bg=BDR)
+            outer.grid(row=0, column=i, padx=GAP//2)
+            cell = tk.Frame(outer, bg=BG3, width=CELL-2, height=CELL-2)
             cell.pack(padx=1, pady=1)
             cell.pack_propagate(False)
-
-            # Potard dessiné sur Canvas
             cv = tk.Canvas(cell, width=26, height=26, bg=BG3, highlightthickness=0)
             cv.place(relx=.5, rely=.26, anchor="center")
-            cv.create_oval(1, 1, 25, 25, outline=FG3, width=1,   fill=BG4)
-            cv.create_oval(5, 5, 21, 21, outline=ACC, width=1.5, fill=BG)
-            cv.create_oval(10,10,16,16, fill=ACC, outline="")
-
+            cv.create_oval(1,  1,  25, 25, outline=FG3, width=1,   fill=BG4)
+            cv.create_oval(5,  5,  21, 21, outline=ACC, width=1.5, fill=BG)
+            cv.create_oval(10, 10, 16, 16, fill=ACC, outline="")
             tk.Label(cell, text=name,   fg=FG,  bg=BG3,
                      font=("Segoe UI",6,"bold")).place(relx=.5, rely=.65, anchor="center")
             tk.Label(cell, text=action, fg=FG3, bg=BG3,
@@ -1018,7 +993,7 @@ class Transport:
             try: self.ser.write((line+"\n").encode())
             except: pass
 
-# ── IMPERIUM CORE ────────────────────────────────────────────────────────────
+# ── MACRODECK CORE ────────────────────────────────────────────────────────────
 # ── PLUGINS ────────────────────────────────────────────────────────────────────
 # Système de plugins sans recompilation : chaque plugin est un simple fichier
 # .json posé dans le dossier "plugins" (à côté de l'exe ou du .py). Il déclare
@@ -1143,104 +1118,7 @@ class PluginManager:
         except Exception as e:
             log.error(f"Plugin run '{action_type}': {e}")
 
-# ── AUTO-UPDATER ──────────────────────────────────────────────────────────────
-class AutoUpdater:
-    """Vérifie si une nouvelle version est disponible sur GitHub Releases et,
-    si l'utilisateur confirme via la GUI, télécharge puis lance le nouvel
-    installeur Inno Setup de façon silencieuse avant de fermer Imperium."""
-
-    def __init__(self, broadcast_fn):
-        self.broadcast = broadcast_fn
-
-    def _parse_version(self, tag: str):
-        """Convertit 'v1.2.3' ou '1.2.3' en tuple (1, 2, 3) pour comparaison."""
-        tag = tag.lstrip("v").strip()
-        try:
-            return tuple(int(x) for x in tag.split("."))
-        except Exception:
-            return (0,)
-
-    def check(self, silent=True):
-        """Appelle l'API GitHub Releases et envoie un message WebSocket si une MAJ est dispo.
-        silent=True : pas de toast si déjà à jour (vérification auto au démarrage)
-        silent=False : toast explicite si déjà à jour (bouton manuel)"""
-        if APP_VERSION == "dev":
-            self.broadcast({"type":"toast","message":"⚠ Version dev — vérification MAJ désactivée"})
-            return
-
-        import urllib.request, urllib.error
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Imperium-Updater"})
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-        except Exception as e:
-            log.warning(f"AutoUpdater check: {e}")
-            if not silent:
-                self.broadcast({"type":"toast","message":f"⚠ Impossible de vérifier les MAJ : {e}"})
-            return
-
-        latest_tag  = data.get("tag_name", "")
-        latest_body = data.get("body", "")
-        assets = data.get("assets", [])
-        installer_url = next(
-            (a["browser_download_url"] for a in assets if a["name"].endswith(".exe")),
-            None
-        )
-        if not installer_url:
-            log.warning("AutoUpdater: aucun .exe trouvé dans la release")
-            if not silent:
-                self.broadcast({"type":"toast","message":"⚠ Aucun installeur trouvé dans la dernière release"})
-            return
-
-        current = self._parse_version(APP_VERSION)
-        latest  = self._parse_version(latest_tag)
-        if latest <= current:
-            if not silent:
-                self.broadcast({"type":"toast","message":f"✅ Imperium {APP_VERSION} est à jour"})
-            return
-
-        log.info(f"MAJ disponible : {APP_VERSION} → {latest_tag}")
-        self.broadcast({
-            "type":          "update_available",
-            "current":       APP_VERSION,
-            "latest":        latest_tag,
-            "changelog":     latest_body,
-            "installer_url": installer_url,
-        })
-
-    def download_and_install(self, installer_url: str):
-        """Télécharge l'installeur dans %TEMP%, le lance, puis quitte Imperium.
-        Tourne dans un thread séparé pour ne pas bloquer la boucle asyncio."""
-        import urllib.request, tempfile
-        try:
-            self.broadcast({"type": "update_progress", "status": "downloading"})
-            tmp = os.path.join(tempfile.gettempdir(), "Imperium_Update.exe")
-            urllib.request.urlretrieve(installer_url, tmp)
-            self.broadcast({"type": "update_progress", "status": "installing"})
-            # /SILENT = wizard visible mais sans clics requis
-            # /CLOSEAPPLICATIONS = ferme les processus Imperium existants
-            subprocess.Popen(
-                [tmp, "/SILENT", "/CLOSEAPPLICATIONS"],
-                creationflags=CREATE_NO_WINDOW
-            )
-            # Laisse 2 s à l'installeur pour démarrer, puis on se ferme
-            time.sleep(2)
-            os.kill(os.getpid(), 9)
-        except Exception as e:
-            log.error(f"AutoUpdater install: {e}")
-            self.broadcast({"type": "update_progress", "status": "error", "message": str(e)})
-
-    def start_background_check(self):
-        """Lance la vérification dans un thread daemon, 10 s après le démarrage
-        pour ne pas ralentir l'init et laisser le WebSocket s'ouvrir d'abord."""
-        def _run():
-            time.sleep(10)
-            self.check()
-        threading.Thread(target=_run, daemon=True).start()
-
-
-class Imperium:
+class MacroDeck:
     def __init__(self):
         self.cfg       = ConfigManager()
         self.ws_clients= set()
@@ -1250,7 +1128,6 @@ class Imperium:
         self.transport = Transport(self._on_esp32)
         self.watcher   = AppWatcher(self._on_app)
         self.overlay   = ProfileOverlayWindow()
-        self.updater   = AutoUpdater(self._broadcast)
 
     def _broadcast(self, obj):
         # Déclenche l'overlay système au-dessus de toutes les fenêtres pour
@@ -1552,21 +1429,6 @@ class Imperium:
                 self.cfg.data["profiles"][pid]["buttons"][bid]=data
                 self.cfg.save()
 
-        elif t=="install_update":
-            # L'utilisateur a confirmé la MAJ dans la popup — on télécharge
-            # et installe dans un thread pour ne pas bloquer la boucle asyncio.
-            url = msg.get("installer_url","")
-            if url:
-                threading.Thread(
-                    target=self.updater.download_and_install,
-                    args=(url,), daemon=True
-                ).start()
-
-        elif t=="check_update":
-            # Bouton "Vérifier les mises à jour" dans les Paramètres
-            threading.Thread(target=self.updater.check, kwargs={"silent":False}, daemon=True).start()
-            await ws.send(json.dumps({"type":"toast","message":"🔍 Vérification des mises à jour..."}))
-
     def _native_picker(self, folder: bool) -> str:
         """Ouvre une boîte de dialogue Windows native pour choisir un dossier ou fichier.
         Tourne dans un script PowerShell séparé (bloquant) pour ne jamais geler
@@ -1595,7 +1457,6 @@ class Imperium:
 
     async def run(self):
         self.transport.start(self.cfg.data.get("serial_port","AUTO"))
-        self.updater.start_background_check()
         # max_size augmenté : la config peut contenir des icônes de boutons
         # personnalisées encodées en base64 (plusieurs dizaines de Ko chacune,
         # potentiellement nombreuses avec plusieurs profils/pages). La limite
@@ -1620,7 +1481,7 @@ def _app_dir_persistent() -> str:
     par opposition à _app_dir() qui pointe vers un dossier temporaire en
     mode .exe compilé. À utiliser pour tout ce qui doit survivre entre deux
     lancements : dossier plugins/, etc. (la config elle-même est dans
-    ~/.imperium/, donc indépendante de l'emplacement de l'exe)."""
+    ~/.macrodeck/, donc indépendante de l'emplacement de l'exe)."""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
@@ -1665,11 +1526,11 @@ def _notify_already_running():
         try:
             ctypes.windll.user32.MessageBoxW(
                 0,
-                "Imperium est déjà lancé en arrière-plan.\n\n"
+                "MacroDeck est déjà lancé en arrière-plan.\n\n"
                 "Ouvre http://127.0.0.1:8766/gui.html dans ton navigateur pour l'utiliser.\n\n"
                 "Si ce n'est pas le cas, ouvre le Gestionnaire des tâches et termine\n"
-                "le processus Imperium.exe existant avant de relancer.",
-                "Imperium — déjà en cours",
+                "le processus MacroDeck.exe existant avant de relancer.",
+                "MacroDeck — déjà en cours",
                 0x40 | 0x1000  # MB_ICONINFORMATION | MB_TOPMOST
             )
         except: pass
@@ -1697,7 +1558,7 @@ if __name__=="__main__":
     threading.Thread(target=_http_server, daemon=True).start()
     threading.Thread(target=_open_browser_when_ready, daemon=True).start()
 
-    deck=Imperium()
+    deck=MacroDeck()
     try:
         asyncio.run(deck.run())
     except KeyboardInterrupt:
