@@ -553,9 +553,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
           <div id="protoTestResult" style="font-size:10px;margin-top:6px;color:var(--text3)"></div>
 
           <div class="sep"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div style="font-size:11px;color:var(--text3)">Imperium <span id="appVersionLbl">v15.2</span> — Console invisible — WebSocket :8765 — HTTP :8766</div>
-            <button class="tbtn" onclick="wsSend({type:'check_update'})" title="Vérifier si une mise à jour est disponible">🔄 Chercher une MAJ</button>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:11px;color:var(--text3)">Imperium v15.2 — WebSocket :8765 — HTTP :8766</div>
+            <button class="tbtn" onclick="checkUpdate()" title="Vérifier les mises à jour">🔄 Vérifier les MAJ</button>
           </div>
         </div>
       </div>
@@ -886,6 +886,7 @@ function connectWS() {
       const m = JSON.parse(e.data);
       if(m.type==="config") { cfg = m.data; activeProfile = cfg.active_profile||"default"; syncFromConfig(); }
       if(m.type==="metrics") { metrics = m.data; updateMetrics(); updateMetricsView(); }
+      if(m.type==="update_available") { handleUpdateAvailable(m); }
       if(m.type==="button_event") { flashBtn(m.button); addLog("rx",m.event||"press",`BTN${m.button+1}`); }
       if(m.type==="pot_event") { animatePot(m.pot,m.value); addLog("rx","pot",`POT${m.pot+1} ${m.value}%`); }
       if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); showProfileOverlay(m.profile); toast("Profil : "+getProfileName(m.profile)); }
@@ -1913,6 +1914,26 @@ function handleProtocolTestResult(m){
   } else {
     res.innerHTML = `<span style="color:var(--red)">✗ ${m.error||"Aucun patron ne correspond"}</span>`;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-UPDATER
+// ═══════════════════════════════════════════════════════════════
+function checkUpdate() {
+  wsSend({type:"check_update"});
+}
+
+function handleUpdateAvailable(m) {
+  // Toast cliquable qui ouvre la release GitHub
+  const t = document.getElementById("toast");
+  t.innerHTML = `🚀 Mise à jour disponible : <b>${m.current}</b> → <b>${m.latest}</b> &nbsp;
+    <a href="https://github.com/tuturpotter-web/Imperium/releases/latest"
+       target="_blank"
+       style="color:#fff;text-decoration:underline;font-weight:600">Télécharger</a>`;
+  t.className = "show update";
+  clearTimeout(window._toastTimer);
+  // Reste visible 8s (plus long que les toasts normaux)
+  window._toastTimer = setTimeout(() => { t.className = ""; t.innerHTML = ""; }, 8000);
 }
 
 // ═══════════════════════════════════════════════════════════════
