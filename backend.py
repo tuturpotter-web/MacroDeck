@@ -848,20 +848,15 @@ class ProfileOverlayWindow:
         bg="#14151b"; card="#1c1f29"; accent="#6366f1"; fg="#f1f5f9"; sub="#94a3b8"; pot_bg="#1a1d27"
         win.configure(bg=bg)
 
-        # Dimensions : 4 colonnes de 52px + marges → 240px de large
-        # 2 rangées boutons (52px chacune) + séparateur + rangée potards (52px) + header + marges → ~230px
         cell_w, cell_h = 52, 52
-        cols = 4
         pad = 8
-        width = cols * cell_w + (cols - 1) * 3 + pad * 2  # ~232
-        width = max(width, 240)
+        width = max(4 * cell_w + 3 * 3 + pad * 2, 240)
 
         sw = win.winfo_screenwidth(); sh = win.winfo_screenheight()
-        x = sw - width - 20; y = sh - 20  # on calculera y après avoir construit
 
-        # On construit d'abord, puis on positionne après update
-        win.geometry(f"{width}x1+{x}+{y}")  # hauteur temporaire
-
+        # Cacher pendant la construction → évite le flash/trait bleu
+        win.withdraw()
+        win.geometry(f"{width}x10-20-60")  # position hors vue, redéfinie après mesure
         win.config(highlightbackground=accent, highlightcolor=accent, highlightthickness=1)
 
         # ── Header ─────────────────────────────────────────────────────────
@@ -934,11 +929,13 @@ class ProfileOverlayWindow:
             tk.Label(cell, text=pot_name,   fg=fg,  bg=pot_bg, font=("Segoe UI", 6, "bold")).place(relx=.5, rely=.62, anchor="center")
             tk.Label(cell, text=pot_action, fg=sub, bg=pot_bg, font=("Segoe UI", 5)).place(relx=.5, rely=.83, anchor="center")
 
-        # Ajustement de la hauteur et position finale après construction
+        # Mesure la hauteur réelle puis affiche d'un coup (sans flash)
         win.update_idletasks()
         height = win.winfo_reqheight()
+        x = sw - width - 20
         y = sh - height - 60
         win.geometry(f"{width}x{height}+{x}+{y}")
+        win.deiconify()
 
         # ── Fermeture après 3 s ────────────────────────────────────────────
         def _close():
