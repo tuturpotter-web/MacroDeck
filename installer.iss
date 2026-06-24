@@ -1,12 +1,12 @@
-; Script Inno Setup — MacroDeck
+; Script Inno Setup — Imperium
 ; Généré automatiquement par le CI/CD GitHub Actions
 
-#define MyAppName      "MacroDeck"
+#define MyAppName      "Imperium"
 #define MyAppVersion   "15.1"
 #define MyAppPublisher "Arthur"
 #define MyAppURL       "https://github.com"
-#define MyAppExeName   "MacroDeck.exe"
-#define MyAppDataDir   "{userappdata}\MacroDeck"
+#define MyAppExeName   "Imperium.exe"
+#define MyAppDataDir   "{userappdata}\Imperium"
 
 [Setup]
 AppId={{8F3C2A1B-4D5E-4F6A-9B0C-1D2E3F4A5B6C}
@@ -23,7 +23,7 @@ AllowNoIcons=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=installer_output
-OutputBaseFilename=MacroDeck_Setup
+OutputBaseFilename=Imperium_Setup
 SetupIconFile=
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -46,11 +46,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; Cases à cocher pendant l'installation
 Name: "desktopicon";    Description: "Créer un raccourci sur le Bureau";          GroupDescription: "Raccourcis :"; Flags: unchecked
 Name: "startmenuicon";  Description: "Créer un raccourci dans le Menu Démarrer";  GroupDescription: "Raccourcis :"; Flags: checkedonce
-Name: "startup";        Description: "Lancer MacroDeck au démarrage de Windows";  GroupDescription: "Options :";    Flags: unchecked
+Name: "startup";        Description: "Lancer Imperium au démarrage de Windows";  GroupDescription: "Options :";    Flags: unchecked
 
 [Files]
 ; Tout le dossier PyInstaller --onedir
-Source: "dist\MacroDeck\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\Imperium\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Menu Démarrer
@@ -74,7 +74,7 @@ Filename: "{app}\{#MyAppExeName}"; \
 
 [UninstallRun]
 ; Tuer le processus avant désinstallation si il tourne
-Filename: "taskkill"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillMacroDeck"
+Filename: "taskkill"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillImperium"
 
 [UninstallDelete]
 ; Nettoyer le dossier plugins créé à l'exécution (à côté de l'exe)
