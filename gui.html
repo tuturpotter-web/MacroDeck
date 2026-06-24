@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>MacroDeck</title>
+<title>Imperium</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -339,7 +339,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 <div class="topbar">
   <div class="logo">
     <div class="logo-ic">🎛</div>
-    <span class="logo-t">MacroDeck</span>
+    <span class="logo-t">Imperium</span>
     <span class="logo-v">V15</span>
   </div>
   <div class="vdiv"></div>
@@ -370,7 +370,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
       <div class="device-view">
         <div class="device" id="deviceCard">
           <div class="dev-hdr">
-            <div class="dev-name">MacroDeck — ESP32-S3</div>
+            <div class="dev-name">Imperium — ESP32-S3</div>
             <div class="dev-conn"><div class="dev-conn-dot" id="devDot"></div><span id="devLbl" style="font-size:10px;color:var(--text3)">—</span></div>
           </div>
           <!-- Profil switcher -->
@@ -554,7 +554,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 
           <div class="sep"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div style="font-size:11px;color:var(--text3)">MacroDeck <span id="appVersionLbl">v15.2</span> — Console invisible — WebSocket :8765 — HTTP :8766</div>
+            <div style="font-size:11px;color:var(--text3)">Imperium <span id="appVersionLbl">v15.2</span> — Console invisible — WebSocket :8765 — HTTP :8766</div>
             <button class="tbtn" onclick="wsSend({type:'check_update'})" title="Vérifier si une mise à jour est disponible">🔄 Chercher une MAJ</button>
           </div>
         </div>
@@ -979,7 +979,7 @@ function renderPlugins(){
         <div style="font-size:12px;margin-bottom:6px">Aucun plugin installé</div>
         <div style="font-size:11px;max-width:420px;margin:0 auto;line-height:1.6">
           Pose un fichier <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">.json</code> dans le dossier
-          <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> à côté de MacroDeck.exe, puis clique sur "Recharger".
+          <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> à côté de Imperium.exe, puis clique sur "Recharger".
         </div>
       </div>
     `:`
@@ -1001,7 +1001,7 @@ function renderPlugins(){
     <div class="grp-lbl" style="margin-bottom:8px">📖 Créer un plugin</div>
     <div style="font-size:11px;color:var(--text2);line-height:1.7;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px">
       Un plugin est un simple fichier <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">.json</code> qui déclare une ou plusieurs actions.
-      Pas besoin de recompiler MacroDeck : pose le fichier dans <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> et clique sur "Recharger".
+      Pas besoin de recompiler Imperium : pose le fichier dans <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">plugins/</code> et clique sur "Recharger".
       <br><br>
       <b>3 types d'exécution possibles :</b><br>
       • <code style="background:var(--bg3);padding:1px 5px;border-radius:4px">shell</code> — commande Windows (fenêtre toujours cachée)<br>
@@ -1041,7 +1041,7 @@ function downloadPluginExample(){
 
 // ═══════════════════════════════════════════════════════════════
 // AUTOSAVE — sauvegarde automatiquement la config côté backend
-// (et donc sur disque ~/.macrodeck/config.json) à chaque modif,
+// (et donc sur disque ~/.imperium/config.json) à chaque modif,
 // avec un debounce pour ne pas spammer le serveur à chaque frappe.
 // Ainsi, tout reste en mémoire après un reboot sans devoir cliquer
 // manuellement sur "Enregistrer".
@@ -1832,7 +1832,7 @@ function clearLog(){logs=[];renderLog();}
 function exportLog(){
   const a=document.createElement("a");
   a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(logs.map(l=>`${l.ts}\t${l.dir}\t${l.type}\t${l.frm}`).join("\n"));
-  a.download="macrodeck_"+Date.now()+".log";a.click();
+  a.download="imperium_"+Date.now()+".log";a.click();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1978,7 +1978,7 @@ function handleUpdateProgress(m) {
     lbl.textContent = "⏳ Téléchargement en cours...";
     bar.style.width = "40%";
   } else if(m.status === "installing") {
-    lbl.textContent = "⚙ Installation en cours — MacroDeck va redémarrer...";
+    lbl.textContent = "⚙ Installation en cours — Imperium va redémarrer...";
     bar.style.width = "90%";
   } else if(m.status === "error") {
     lbl.style.color = "var(--red)";
@@ -2025,7 +2025,7 @@ buildPots();
 buildLeds();
 updateMetrics();
 renderProfiles();
-sysLog("MacroDeck v15.1 — ws://localhost:8765");
+sysLog("Imperium v15.1 — ws://localhost:8765");
 </script>
 </body>
 </html>
