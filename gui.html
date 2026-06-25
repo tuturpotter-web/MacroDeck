@@ -893,6 +893,7 @@ function connectWS() {
       if(m.type==="config") { cfg = m.data; activeProfile = cfg.active_profile||"default"; syncFromConfig(); }
       if(m.type==="metrics") { metrics = m.data; updateMetrics(); updateMetricsView(); }
       if(m.type==="update_available") { handleUpdateAvailable(m); }
+      if(m.type==="update_progress") { handleUpdateProgress(m); }
       if(m.type==="button_event") { flashBtn(m.button); addLog("rx",m.event||"press",`BTN${m.button+1}`); }
       if(m.type==="pot_event") { animatePot(m.pot,m.value); addLog("rx","pot",`POT${m.pot+1} ${m.value}%`); }
       if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); toast("Profil : "+getProfileName(m.profile)); }
@@ -2008,12 +2009,36 @@ function saveOverlayCfg() {
 function previewOverlay() { wsSend({type:"preview_overlay"}); }
 
 // ── MAJ disponible → toast cliquable ─────────────────────────────────────
+let _updateDownloadUrl = "";
 function handleUpdateAvailable(m) {
+  _updateDownloadUrl = m.download_url || "";
   const t = document.getElementById("toast");
-  t.innerHTML = `🚀 MAJ disponible : <b>${m.current}</b> → <b>${m.latest}</b> &nbsp;<button onclick="wsSend({type:'open_update_url'});this.textContent='✓ Ouverture...';this.disabled=true" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600">⬇ Télécharger</button> <button onclick="document.getElementById('toast').className='';document.getElementById('toast').innerHTML=''" style="background:none;color:#aaa;border:none;cursor:pointer;font-size:14px;margin-left:4px">✕</button>`;
+  t.innerHTML = `🚀 MAJ disponible : <b>${m.current}</b> → <b>${m.latest}</b> &nbsp;<button id="dlUpdateBtn" onclick="startUpdate()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600">⬇ Télécharger &amp; installer</button> <button onclick="document.getElementById('toast').className='';document.getElementById('toast').innerHTML=''" style="background:none;color:#aaa;border:none;cursor:pointer;font-size:14px;margin-left:4px">✕</button>`;
   t.className = "show";
   clearTimeout(window._toastTimer);
-  // Pas de fermeture auto — l'utilisateur ferme manuellement
+}
+function startUpdate() {
+  const t = document.getElementById("toast");
+  t.innerHTML = `⬇ Téléchargement… <span id="updatePct">0%</span> <div style="display:inline-block;width:120px;height:6px;background:var(--bg3);border-radius:3px;vertical-align:middle;margin-left:6px"><div id="updateBar" style="height:6px;background:var(--accent);border-radius:3px;width:0%;transition:width .2s"></div></div>`;
+  t.className = "show";
+  wsSend({type:"open_update_url", download_url: _updateDownloadUrl});
+}
+function handleUpdateProgress(m) {
+  if(m.error) {
+    toast("⚠ Erreur MAJ : " + m.error, 6000);
+    return;
+  }
+  const t = document.getElementById("toast");
+  if(!t) return;
+  if(m.status === "launching") {
+    t.innerHTML = `✅ Installation en cours — Imperium va redémarrer…`;
+    return;
+  }
+  const pct = m.pct || 0;
+  const pctEl = document.getElementById("updatePct");
+  const barEl = document.getElementById("updateBar");
+  if(pctEl) pctEl.textContent = pct + "%";
+  if(barEl) barEl.style.width = pct + "%";
 }
 function checkUpdate() { wsSend({type:"check_update"}); }
 
