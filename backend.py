@@ -7,6 +7,7 @@ MacroDeck Backend v15.1
 - Serveur HTTP silencieux sur 8766
 - WebSocket sur 8765
 """
+APP_VERSION = "dev"
 import sys, os, ctypes, threading, time, asyncio, json, subprocess, re
 import webbrowser, shutil, glob, logging, datetime
 from pathlib import Path
@@ -892,18 +893,27 @@ class ProfileOverlayWindow:
                     import io, base64 as b64
                     raw = b64.b64decode(img_data[img_data.index(",")+1:])
                     sz  = max(CELL-16, 18)
+                    tkimg = None
                     try:
                         from PIL import Image as PI, ImageTk
                         tkimg = ImageTk.PhotoImage(PI.open(io.BytesIO(raw)).resize((sz,sz), PI.LANCZOS))
                     except ImportError:
-                        tkimg = tk.PhotoImage(data=img_data[img_data.index(",")+1:])
-                        f = max(1, tkimg.width()//sz)
-                        if f>1: tkimg = tkimg.subsample(f,f)
-                    win._imgs.append(tkimg)
-                    tk.Label(cell, image=tkimg, bg=CARD).place(relx=.5, rely=.36, anchor="center")
-                    tk.Label(cell, text=label, fg=FG3, bg=CARD,
-                             font=("Segoe UI",6)).place(relx=.5, rely=.82, anchor="center")
-                    placed = True
+                        # Fallback tk natif — fonctionne uniquement PNG
+                        try:
+                            tkimg = tk.PhotoImage(data=b64.b64encode(raw).decode())
+                            # subsample si trop grand
+                            tw, th = tkimg.width(), tkimg.height()
+                            if tw > sz or th > sz:
+                                f = max(tw//sz, th//sz, 1)
+                                if f > 1: tkimg = tkimg.subsample(f, f)
+                        except Exception as e2:
+                            log.warning(f"Overlay tk.PhotoImage btn{i}: {e2}")
+                    if tkimg:
+                        win._imgs.append(tkimg)
+                        tk.Label(cell, image=tkimg, bg=CARD).place(relx=.5, rely=.36, anchor="center")
+                        tk.Label(cell, text=label, fg=FG3, bg=CARD,
+                                 font=("Segoe UI",6)).place(relx=.5, rely=.82, anchor="center")
+                        placed = True
                 except Exception as e:
                     log.warning(f"Overlay img btn{i}: {e}")
             if not placed:
@@ -945,19 +955,26 @@ class ProfileOverlayWindow:
                     import io, base64 as b64
                     raw = b64.b64decode(img_data[img_data.index(",")+1:])
                     sz  = max(CELL-22, 14)
+                    tkimg = None
                     try:
                         from PIL import Image as PI, ImageTk
                         tkimg = ImageTk.PhotoImage(PI.open(io.BytesIO(raw)).resize((sz,sz), PI.LANCZOS))
                     except ImportError:
-                        tkimg = tk.PhotoImage(data=img_data[img_data.index(",")+1:])
-                        f = max(1, tkimg.width()//sz)
-                        if f>1: tkimg = tkimg.subsample(f,f)
-                    win._imgs.append(tkimg)
-                    tk.Label(cell, image=tkimg, bg=BG3).place(relx=.5, rely=.28, anchor="center")
-                    lbl = custom_text or name
-                    tk.Label(cell, text=lbl, fg=FG, bg=BG3,
-                             font=("Segoe UI",5,"bold")).place(relx=.5, rely=.80, anchor="center")
-                    placed = True
+                        try:
+                            tkimg = tk.PhotoImage(data=b64.b64encode(raw).decode())
+                            tw, th = tkimg.width(), tkimg.height()
+                            if tw > sz or th > sz:
+                                f = max(tw//sz, th//sz, 1)
+                                if f > 1: tkimg = tkimg.subsample(f, f)
+                        except Exception as e2:
+                            log.warning(f"Overlay tk.PhotoImage pot{i}: {e2}")
+                    if tkimg:
+                        win._imgs.append(tkimg)
+                        tk.Label(cell, image=tkimg, bg=BG3).place(relx=.5, rely=.28, anchor="center")
+                        lbl = custom_text or name
+                        tk.Label(cell, text=lbl, fg=FG, bg=BG3,
+                                 font=("Segoe UI",5,"bold")).place(relx=.5, rely=.80, anchor="center")
+                        placed = True
                 except Exception as e:
                     log.warning(f"Overlay img pot{i}: {e}")
             if not placed:
@@ -1479,6 +1496,34 @@ class MacroDeck:
             else:
                 await ws.send(json.dumps({"type":"protocol_test_result","ok":False,
                     "error":"Aucun patron ne correspond à cette trame (trame envoyée quand même)"}))
+
+        elif t=="check_update":
+            async def _do_check_update():
+                import urllib.request, urllib.error
+                GITHUB_REPO = "tuturpotter-web/Imperium"
+                try:
+                    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Imperium-updater"})
+                    with urllib.request.urlopen(req, timeout=8) as r:
+                        data = json.loads(r.read())
+                    latest = data.get("tag_name", "").lstrip("v")
+                    current = APP_VERSION
+                    if latest and latest != current:
+                        await ws.send(json.dumps({"type":"update_available","current":current,"latest":latest}))
+                    else:
+                        await ws.send(json.dumps({"type":"toast","message":f"✓ Imperium {current} est à jour"}))
+                except urllib.error.URLError as e:
+                    await ws.send(json.dumps({"type":"toast","message":f"⚠ Vérification MAJ impossible : {e.reason}"}))
+                except Exception as e:
+                    await ws.send(json.dumps({"type":"toast","message":f"⚠ Vérification MAJ : {e}"}))
+            asyncio.ensure_future(_do_check_update())
+
+        elif t=="preview_overlay":
+            key = self.cfg.data.get("active_profile","default")
+            profile = self.cfg.data.get("profiles",{}).get(key)
+            if profile and self.overlay:
+                ov_cfg = self.cfg.data.get("overlay",{})
+                self.overlay.show_profile(profile, ov_cfg)
 
         elif t=="update_button":
             pid=msg.get("profile","default"); bid=str(msg.get("button",0))
