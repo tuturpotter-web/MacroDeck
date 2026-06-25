@@ -240,19 +240,30 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 
 /* ── VIEW: SETTINGS ── */
 .settings-view{flex:1;overflow-y:auto;padding:24px}
-.settings-inner{max-width:560px}
-.settings-title{font-size:13px;font-weight:600;margin-bottom:18px}
+.settings-inner{max-width:620px}
+.settings-title{font-size:16px;font-weight:700;margin-bottom:6px;letter-spacing:-.3px}
+.settings-subtitle{font-size:11px;color:var(--text3);margin-bottom:24px}
+.s-section{background:var(--bg1);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
+.s-section-hdr{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.s-section-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.s-section-title{font-size:12px;font-weight:700;letter-spacing:-.1px}
+.s-section-desc{font-size:10px;color:var(--text3);margin-top:1px}
+/* Settings tabs */
+.s-tabs{display:flex;gap:2px;background:var(--bg2);border-radius:8px;padding:3px;margin-bottom:20px}
+.s-tab{flex:1;padding:6px 4px;border-radius:6px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:11px;font-family:'Inter',sans-serif;font-weight:500;transition:all .12s;text-align:center}
+.s-tab.active{background:var(--bg4);color:var(--text);box-shadow:0 1px 3px #00000020}
 
 /* ── MODAL ACTION ── */
-.modal-ov{position:fixed;inset:0;background:#00000070;z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);display:none}
+.modal-ov{position:fixed;inset:0;background:#00000075;z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);display:none}
 .modal-ov.open{display:flex}
-.modal{background:var(--bg1);border:1px solid var(--border2);border-radius:14px;width:min(560px,95vw);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px #00000060}
-.modal-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
-.modal-t{font-size:13px;font-weight:600;flex:1}
-.modal-x{width:26px;height:26px;border-radius:5px;border:none;background:var(--bg3);color:var(--text2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}
-.modal-x:hover{background:var(--bg4)}
-.modal-body{flex:1;overflow-y:auto;padding:14px 18px}
-.modal-foot{padding:10px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:7px;flex-shrink:0}
+.modal{background:var(--bg1);border:1px solid var(--border2);border-radius:20px;width:min(580px,95vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 32px 80px #00000080,0 0 0 1px #ffffff08;animation:modalIn .18s cubic-bezier(.34,1.56,.64,1)}
+@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.modal-hdr{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.modal-t{font-size:14px;font-weight:700;flex:1;letter-spacing:-.2px}
+.modal-x{width:28px;height:28px;border-radius:8px;border:none;background:var(--bg3);color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.modal-x:hover{background:var(--red);color:#fff}
+.modal-body{flex:1;overflow-y:auto;padding:16px 22px}
+.modal-foot{padding:12px 22px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
 .act-cats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
 .ac{padding:3px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);cursor:pointer;font-size:11px;transition:all .12s}
 .ac:hover,.ac.active{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
@@ -351,7 +362,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
     <button class="sb-btn" title="Métriques" onclick="switchView('metrics',null);sbActive(this)">📊</button>
     <button class="sb-btn" title="Profils" onclick="switchView('profiles',null);sbActive(this)">◈</button>
     <button class="sb-btn" title="Plugins" onclick="switchView('plugins',null);sbActive(this)">🧩</button>
-    <button class="sb-btn" title="Overlay" onclick="switchView('overlay',null);sbActive(this)">🪟</button>
     <div class="sb-sep"></div>
     <button class="sb-btn" title="Serial" onclick="switchView('serial',null);sbActive(this)">⌨</button>
     <button class="sb-btn" title="Paramètres" onclick="switchView('settings',null);sbActive(this)">⚙</button>
@@ -494,62 +504,196 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
       <div class="settings-view">
         <div class="settings-inner">
           <div class="settings-title">Paramètres</div>
-          <div class="grp">
-            <div class="grp-lbl">Thème</div>
-            <select class="sel" onchange="applyTheme(this.value)" id="themeSel">
-              <option value="dark">Sombre</option>
-              <option value="light">Clair</option>
-            </select>
+          <div class="settings-subtitle">Configuration de MacroDeck et de la connexion ESP32</div>
+
+          <!-- TABS -->
+          <div class="s-tabs">
+            <button class="s-tab active" id="stab-general" onclick="switchSettingsTab('general')">⚙ Général</button>
+            <button class="s-tab" id="stab-serial" onclick="switchSettingsTab('serial')">🔌 Connexion</button>
+            <button class="s-tab" id="stab-proto" onclick="switchSettingsTab('proto')">📡 Protocole</button>
+            <button class="s-tab" id="stab-overlay" onclick="switchSettingsTab('overlay')">🪟 Overlay</button>
           </div>
-          <div class="grp">
-            <div class="grp-lbl">Port Série</div>
-            <div style="display:flex;gap:6px">
-              <input class="inp" id="serialPortInput" value="AUTO" style="flex:1">
-              <button class="tbtn" onclick="refreshPorts()">🔄 Détecter</button>
-              <button class="tbtn" onclick="connectSerial()">⚡ Connecter</button>
+
+          <!-- TAB: GÉNÉRAL -->
+          <div id="stab-content-general">
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#6366f120">🎨</div>
+                <div><div class="s-section-title">Apparence</div><div class="s-section-desc">Thème visuel de l'interface</div></div>
+              </div>
+              <div class="grp" style="margin-bottom:0">
+                <div class="grp-lbl">Thème</div>
+                <select class="sel" onchange="applyTheme(this.value)" id="themeSel" style="max-width:200px">
+                  <option value="dark">🌙 Sombre</option>
+                  <option value="light">☀️ Clair</option>
+                </select>
+              </div>
             </div>
-            <div id="portsList" style="margin-top:5px;font-size:10px;color:var(--text3)"></div>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#22c55e20">ℹ</div>
+                <div><div class="s-section-title">À propos</div><div class="s-section-desc">Version et mises à jour</div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div style="font-size:11px;color:var(--text3)">MacroDeck — WebSocket :8765 — HTTP :8766</div>
+                <button class="tbtn" onclick="checkUpdate()">🔄 Vérifier les MAJ</button>
+              </div>
+            </div>
           </div>
-          <div class="sep"></div>
 
-          <div class="grp-lbl" style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">🔌 Protocole ESP32</div>
-          <div style="font-size:10px;color:var(--text3);line-height:1.6;margin-bottom:12px">
-            Définis le format exact des trames série échangées avec ton ESP32. Utilise <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{i}</code> pour l'index du bouton/potard (0-7) et <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">{v}</code> pour une valeur (0-100). Par défaut le format est du JSON, mais tu peux mettre n'importe quel texte (ex: <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">BTN{i}:PRESS</code>).
+          <!-- TAB: CONNEXION -->
+          <div id="stab-content-serial" style="display:none">
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#3b82f620">🔌</div>
+                <div><div class="s-section-title">Port USB 1 — ESP32 principal</div><div class="s-section-desc">Périphérique connecté au premier port USB</div></div>
+              </div>
+              <div class="grp">
+                <div class="grp-lbl">Port COM</div>
+                <div style="display:flex;gap:6px">
+                  <input class="inp" id="serialPortInput" value="AUTO" style="flex:1">
+                  <button class="tbtn" onclick="refreshPorts()">🔄 Détecter</button>
+                  <button class="tbtn pr" onclick="connectSerial(0)">⚡ Connecter</button>
+                </div>
+                <div id="portsList" style="margin-top:6px;font-size:10px;color:var(--text3)"></div>
+              </div>
+              <div class="grp" style="margin-bottom:0">
+                <div class="grp-lbl">Vitesse (bauds)</div>
+                <select class="sel" id="baudRate1" style="max-width:150px">
+                  <option value="9600">9600</option>
+                  <option value="57600">57600</option>
+                  <option value="115200" selected>115200</option>
+                  <option value="230400">230400</option>
+                </select>
+              </div>
+            </div>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#a855f720">🔌</div>
+                <div><div class="s-section-title">Port USB 2 — Périphérique secondaire</div><div class="s-section-desc">Second dispositif série (optionnel)</div></div>
+              </div>
+              <div class="grp">
+                <div class="grp-lbl">Port COM</div>
+                <div style="display:flex;gap:6px">
+                  <input class="inp" id="serialPortInput2" value="" placeholder="ex: COM5" style="flex:1">
+                  <button class="tbtn pr" onclick="connectSerial(1)">⚡ Connecter</button>
+                </div>
+                <div id="portsList2" style="margin-top:6px;font-size:10px;color:var(--text3)"></div>
+              </div>
+              <div class="grp" style="margin-bottom:0">
+                <div class="grp-lbl">Vitesse (bauds)</div>
+                <select class="sel" id="baudRate2" style="max-width:150px">
+                  <option value="9600">9600</option>
+                  <option value="57600">57600</option>
+                  <option value="115200" selected>115200</option>
+                  <option value="230400">230400</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div class="grp-lbl" style="margin-top:14px">Trames reçues de l'ESP32 (boutons)</div>
-          <div class="proto-row"><span class="proto-lbl">Appui simple</span><input class="inp proto-inp" id="proto_in_press" placeholder='{"t":"press","i":{i}}'></div>
-          <div class="proto-row"><span class="proto-lbl">Appui long</span><input class="inp proto-inp" id="proto_in_long_press" placeholder='{"t":"long_press","i":{i}}'></div>
-          <div class="proto-row"><span class="proto-lbl">Double clic</span><input class="inp proto-inp" id="proto_in_double_click" placeholder='{"t":"double_click","i":{i}}'></div>
-          <div class="proto-row"><span class="proto-lbl">Relâchement</span><input class="inp proto-inp" id="proto_in_release" placeholder='{"t":"release","i":{i}}'></div>
+          <!-- TAB: PROTOCOLE -->
+          <div id="stab-content-proto" style="display:none">
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#f9731620">📥</div>
+                <div><div class="s-section-title">Trames reçues — Boutons</div><div class="s-section-desc">Format simplifié : btn{i}:on et btn{i}:off — la durée entre on/off détermine le type d'appui</div></div>
+              </div>
+              <div style="background:var(--bg0);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:10px;color:var(--text3);line-height:1.7">
+                <b style="color:var(--text)">Format par défaut :</b> <code style="background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--accent)">btn{i}:on</code> au press, <code style="background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--accent)">btn{i}:off</code> au relâchement.<br>
+                Le backend calcule la durée pour distinguer appui simple (&lt;400ms), long (&gt;400ms) et double clic (&lt;300ms entre deux on).
+              </div>
+              <div class="proto-row"><span class="proto-lbl">Bouton ON</span><input class="inp proto-inp" id="proto_in_press" placeholder="btn{i}:on"></div>
+              <div class="proto-row"><span class="proto-lbl">Bouton OFF</span><input class="inp proto-inp" id="proto_in_release" placeholder="btn{i}:off"></div>
+              <div style="font-size:9px;color:var(--text3);margin-top:4px">Garde vides les autres champs — le timing fait tout.</div>
+              <div class="proto-row" style="margin-top:10px"><span class="proto-lbl">Appui long</span><input class="inp proto-inp" id="proto_in_long_press" placeholder="(optionnel — calculé auto)"></div>
+              <div class="proto-row"><span class="proto-lbl">Double clic</span><input class="inp proto-inp" id="proto_in_double_click" placeholder="(optionnel — calculé auto)"></div>
+            </div>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#22c55e20">🎚</div>
+                <div><div class="s-section-title">Trames reçues — Potards</div><div class="s-section-desc">Format de la valeur envoyée par les potentiomètres</div></div>
+              </div>
+              <div class="proto-row"><span class="proto-lbl">Valeur potard</span><input class="inp proto-inp" id="proto_in_pot" placeholder="pot{i}:{v}"></div>
+            </div>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#3b82f620">📤</div>
+                <div><div class="s-section-title">Trames envoyées — LEDs</div><div class="s-section-desc">Format des commandes envoyées à l'ESP32 pour les LEDs</div></div>
+              </div>
+              <div class="proto-row"><span class="proto-lbl">Mise à jour LED</span><input class="inp proto-inp" id="proto_out_led" placeholder="led{i}:{v}"></div>
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:10px">
+              <button class="tbtn pr" onclick="saveProtocol()">💾 Enregistrer</button>
+              <button class="tbtn" onclick="resetProtocolDefaults()">↺ Réinitialiser</button>
+            </div>
+            <div id="protocolSaveMsg" style="font-size:10px;margin-bottom:14px"></div>
 
-          <div class="grp-lbl" style="margin-top:14px">Trame reçue de l'ESP32 (potards)</div>
-          <div class="proto-row"><span class="proto-lbl">Valeur potard</span><input class="inp proto-inp" id="proto_in_pot" placeholder='{"t":"pot","i":{i},"v":{v}}'></div>
-
-          <div class="grp-lbl" style="margin-top:14px">Trame envoyée à l'ESP32 (LEDs)</div>
-          <div class="proto-row"><span class="proto-lbl">Mise à jour LED</span><input class="inp proto-inp" id="proto_out_led" placeholder='{"t":"led","s":{i},"v":{v}}'></div>
-          <div style="font-size:9px;color:var(--text3);margin-top:2px;margin-bottom:10px">Exemple alternatif : <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">led{i}:{v}%</code> enverra par exemple <code style="background:var(--bg3);padding:1px 4px;border-radius:3px">led1:42%</code></div>
-
-          <div style="display:flex;gap:6px;margin-top:10px">
-            <button class="tbtn pr" onclick="saveProtocol()">💾 Enregistrer le protocole</button>
-            <button class="tbtn" onclick="resetProtocolDefaults()">↺ Réinitialiser (JSON par défaut)</button>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#eab30820">🧪</div>
+                <div><div class="s-section-title">Simulateur de trames</div><div class="s-section-desc">Teste sans avoir l'ESP32 branché — choisir un bouton ou saisir une trame</div></div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+                <div class="grp-lbl" style="margin-bottom:0;width:auto;white-space:nowrap">Bouton :</div>
+                <select class="sel" id="simBtnSel" style="width:90px">
+                  ${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n-1}">BTN ${n}</option>`).join('')}
+                </select>
+                <button class="tbtn" onclick="simBtnPress()">▶ Appui</button>
+                <button class="tbtn" onclick="simBtnLong()">⏳ Long</button>
+                <button class="tbtn" onclick="simBtnDouble()">⚡ Double</button>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <input class="inp" id="protoTestSample" placeholder="ou trame brute ex: btn1:on" style="flex:1;font-family:'JetBrains Mono',monospace">
+                <button class="tbtn" onclick="simulateEsp32Frame()">▶ Envoyer</button>
+              </div>
+              <div id="protoTestResult" style="font-size:10px;color:var(--text3)"></div>
+            </div>
           </div>
-          <div id="protocolSaveMsg" style="font-size:10px;margin-top:6px"></div>
 
-          <div class="sep" style="margin-top:18px"></div>
-          <div class="grp-lbl" style="font-size:12px;font-weight:600;color:var(--text)">🧪 Tester une trame</div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Simule la réception d'une trame brute, comme si elle venait vraiment de l'ESP32 — utile pour vérifier ta config sans matériel branché.</div>
-          <div style="display:flex;gap:6px">
-            <input class="inp" id="protoTestSample" placeholder='ex: {"t":"press","i":2}' style="flex:1">
-            <button class="tbtn" onclick="simulateEsp32Frame()">▶ Envoyer</button>
+          <!-- TAB: OVERLAY -->
+          <div id="stab-content-overlay" style="display:none">
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#6366f120">🪟</div>
+                <div><div class="s-section-title">Popup de changement de profil</div><div class="s-section-desc">Affichée au-dessus de toutes les fenêtres à chaque changement de profil</div></div>
+              </div>
+              <div class="grp">
+                <div class="grp-lbl">Taille des cellules (px)</div>
+                <input class="inp" type="number" id="ov_cell_size" value="56" min="32" max="100" style="width:80px">
+              </div>
+              <div class="grp">
+                <div class="grp-lbl">Durée d'affichage (secondes)</div>
+                <input class="inp" type="number" id="ov_delay" value="3" min="1" max="15" style="width:80px">
+              </div>
+              <div class="grp">
+                <div class="grp-lbl">Position</div>
+                <select class="sel" id="ov_position" style="max-width:220px">
+                  <option value="br">↙ Bas droite (défaut)</option>
+                  <option value="bl">↘ Bas gauche</option>
+                  <option value="tr">↖ Haut droite</option>
+                  <option value="tl">↗ Haut gauche</option>
+                </select>
+              </div>
+              <div class="grp" style="margin-bottom:0">
+                <div class="grp-lbl">Opacité (%)</div>
+                <input class="inp" type="number" id="ov_alpha" value="97" min="20" max="100" style="width:80px">
+              </div>
+            </div>
+            <div class="s-section">
+              <div class="s-section-hdr">
+                <div class="s-section-ic" style="background:#34d39920">🎚</div>
+                <div><div class="s-section-title">Images des potards dans l'overlay</div><div class="s-section-desc">Par profil — chaque profil peut avoir ses propres images</div></div>
+              </div>
+              <div id="ov_pots_cfg"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px">
+              <button class="tbtn pr" onclick="saveOverlayCfg()">💾 Enregistrer</button>
+              <button class="tbtn" onclick="previewOverlay()">👁 Prévisualiser</button>
+            </div>
+            <div id="ovSaveMsg" style="font-size:10px;margin-top:6px;color:var(--accent)"></div>
           </div>
-          <div id="protoTestResult" style="font-size:10px;margin-top:6px;color:var(--text3)"></div>
 
-          <div class="sep"></div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div style="font-size:11px;color:var(--text3)">Imperium v15.2 — WebSocket :8765 — HTTP :8766</div>
-            <button class="tbtn" onclick="checkUpdate()">🔄 Vérifier les MAJ</button>
-          </div>
         </div>
       </div>
     </div>
@@ -598,46 +742,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 
 <div id="toast"></div>
 
-<!-- ── VIEW OVERLAY ── -->
-<!-- Note: injectée hors du DOM .views pour éviter le bug de nesting dans la modal.
-     switchView() cible v-overlay par ID, donc l'emplacement exact n'a pas d'importance
-     tant que c'est dans le shell et que .view.active{display:flex} s'applique. -->
-<div class="view" id="v-overlay" style="position:absolute;inset:0;top:46px;left:48px;z-index:10;background:var(--bg0);overflow-y:auto;flex-direction:column">
-  <div class="settings-inner" style="max-width:560px;padding:24px">
-    <div class="settings-title">🪟 Overlay — Popup changement de profil</div>
-    <div class="grp">
-      <div class="grp-lbl">Taille des cellules (px)</div>
-      <input class="inp" type="number" id="ov_cell_size" value="56" min="32" max="100" style="width:80px">
-    </div>
-    <div class="grp">
-      <div class="grp-lbl">Durée d'affichage (secondes)</div>
-      <input class="inp" type="number" id="ov_delay" value="3" min="1" max="15" style="width:80px">
-    </div>
-    <div class="grp">
-      <div class="grp-lbl">Position</div>
-      <select class="sel" id="ov_position">
-        <option value="br">Bas droite (défaut)</option>
-        <option value="bl">Bas gauche</option>
-        <option value="tr">Haut droite</option>
-        <option value="tl">Haut gauche</option>
-      </select>
-    </div>
-    <div class="grp">
-      <div class="grp-lbl">Opacité (%)</div>
-      <input class="inp" type="number" id="ov_alpha" value="97" min="20" max="100" style="width:80px">
-    </div>
-    <div class="sep"></div>
-    <div class="grp-lbl" style="font-size:13px;font-weight:600;color:var(--text)">Zone potards</div>
-    <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
-      Remplace l'affichage automatique (nom + action) par une image ou un texte libre pour chaque potard.
-    </div>
-    <div id="ov_pots_cfg"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="tbtn pr" onclick="saveOverlayCfg()">💾 Enregistrer</button>
-      <button class="tbtn" onclick="previewOverlay()">👁 Prévisualiser</button>
-    </div>
-    <div id="ovSaveMsg" style="font-size:10px;margin-top:6px;color:var(--accent)"></div>
-  </div>
 </div>
 
 <script>
@@ -773,6 +877,8 @@ let metrics = {};
 let logs = [], logFilter = "all";
 let ws = null, theme = "dark";
 let serialConnected = false, serialPortName = null;
+let serialConnected2 = false, serialPortName2 = null;
+let _lastUsbSlot = 0;
 let installedApps = [], appsLoaded = false;
 let modalBtnIdx = null, selActType = null, selActObj = null, activeCat = "Tous";
 let pluginCatalog = [], pluginMeta = [];
@@ -872,6 +978,11 @@ function getPotData(i) {
   const p = getActiveProfileData();
   return p.pots?.[i] || DEFAULT_POTS[i] || {name:"Pot "+(i+1),action:"custom"};
 }
+function getPotImage(i) {
+  // Images are stored per-profile so each profile can have its own pot images
+  const p = getActiveProfileData();
+  return p.pots?.[i]?.image || null;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // OVERLAY MINI-STREAMDECK — affiché en bas à droite à chaque
@@ -904,7 +1015,12 @@ function connectWS() {
       if(m.type==="picked_path") { applyPickedPath(m.field, m.path); }
       if(m.type==="plugins") { pluginCatalog = m.data; pluginMeta = m.meta||[]; mergePluginActions(); renderPlugins(); }
       if(m.type==="toast") { toast(m.message); }
-      if(m.type==="serial_status") { serialConnected = m.connected; serialPortName = m.port; updateUsbStatus(); if(document.getElementById("usbInfoModal")?.classList.contains("open")){ const slot=0; openUsbInfo(slot); } }
+      if(m.type==="serial_status") {
+        serialConnected = m.connected; serialPortName = m.port;
+        serialConnected2 = m.connected2||false; serialPortName2 = m.port2||null;
+        updateUsbStatus();
+        if(document.getElementById("usbInfoModal")?.classList.contains("open")){ openUsbInfo(_lastUsbSlot||0); }
+      }
       if(m.type==="protocol_saved") { handleProtocolSaved(m); }
       if(m.type==="protocol_test_result") { handleProtocolTestResult(m); }
     };
@@ -1126,21 +1242,21 @@ function buildPots() {
   for(let i=0;i<4;i++) {
     const p=getPotData(i);
     const d=document.createElement("div"); d.className="hw-pot";
-    d.innerHTML=`<svg viewBox="0 0 54 54" width="54" height="54" style="overflow:visible;cursor:ns-resize">
-      <defs><radialGradient id="kg${i}" cx="38%" cy="32%"><stop offset="0%" stop-color="#252837"/><stop offset="100%" stop-color="#0c0d10"/></radialGradient></defs>
-      <circle cx="27" cy="27" r="25" fill="url(#kg${i})" stroke="#ffffff08" stroke-width="1"/>
-      <circle cx="27" cy="27" r="21" fill="#07080b" stroke="#ffffff05" stroke-width="1"/>
-      <!-- Track de fond : cercle complet toujours visible, faible opacité -->
-      <circle cx="27" cy="27" r="${r}" fill="none" stroke="#ffffff14" stroke-width="2.5"/>
-      <!-- Anneau de progression : cercle complet dont on masque une portion
-           via stroke-dasharray/offset — garantit un tour à 360° plein à 100%,
-           sans le calcul manuel d'arc qui laissait un espace résiduel. -->
-      <circle id="ka${i}" cx="27" cy="27" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
-        stroke-linecap="round" transform="rotate(-90,27,27)"
-        stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}"/>
-      <line id="kl${i}" x1="27" y1="27" x2="27" y2="7" stroke="#818cf8" stroke-width="2" stroke-linecap="round" transform="rotate(0,27,27)"/>
-      <circle cx="27" cy="27" r="2.5" fill="var(--accent)"/>
-    </svg>
+    const potImg = p.image || null;
+    d.innerHTML=`<div style="position:relative;width:54px;height:54px">
+      <svg viewBox="0 0 54 54" width="54" height="54" style="overflow:visible;cursor:ns-resize;position:absolute;top:0;left:0">
+        <defs><radialGradient id="kg${i}" cx="38%" cy="32%"><stop offset="0%" stop-color="#252837"/><stop offset="100%" stop-color="#0c0d10"/></radialGradient></defs>
+        <circle cx="27" cy="27" r="25" fill="url(#kg${i})" stroke="#ffffff08" stroke-width="1"/>
+        <circle cx="27" cy="27" r="21" fill="#07080b" stroke="#ffffff05" stroke-width="1"/>
+        <circle cx="27" cy="27" r="${r}" fill="none" stroke="#ffffff14" stroke-width="2.5"/>
+        <circle id="ka${i}" cx="27" cy="27" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
+          stroke-linecap="round" transform="rotate(-90,27,27)"
+          stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}"/>
+        <line id="kl${i}" x1="27" y1="27" x2="27" y2="7" stroke="#818cf8" stroke-width="2" stroke-linecap="round" transform="rotate(0,27,27)"/>
+        <circle cx="27" cy="27" r="2.5" fill="var(--accent)"/>
+      </svg>
+      ${potImg ? `<img src="${potImg}" style="position:absolute;top:8px;left:8px;width:38px;height:38px;border-radius:50%;object-fit:cover;pointer-events:none;opacity:.85">` : ""}
+    </div>
     <div class="pot-lbl">${p.name||"Pot "+(i+1)}</div>
     <div class="pot-val" id="pv${i}">0%</div>`;
     d.addEventListener("wheel",e=>{e.preventDefault();turnPot(i,e.deltaY>0?-4:4);},{passive:false});
@@ -1544,19 +1660,19 @@ function pickLedMetric(i,key){
 // PORTS USB — infos de connexion au clic
 // ═══════════════════════════════════════════════════════════════
 function updateUsbStatus(){
-  // Seul le port réellement utilisé par la liaison série (usb-0, le premier
-  // connecteur) reflète l'état de connexion réel ; le second reste neutre
-  // tant qu'on ne gère qu'une seule liaison ESP32 à la fois.
   const u0 = document.getElementById("usb-0");
   if(u0) u0.classList.toggle("active", !!serialConnected);
+  const u1 = document.getElementById("usb-1");
+  if(u1) u1.classList.toggle("active", !!serialConnected2);
 }
 function openUsbInfo(slot){
+  _lastUsbSlot = slot;
   let modal = document.getElementById("usbInfoModal");
   if(!modal){
     modal = document.createElement("div");
     modal.id = "usbInfoModal";
     modal.className = "modal-ov";
-    modal.innerHTML = `<div class="modal" style="max-width:380px">
+    modal.innerHTML = `<div class="modal" style="max-width:400px">
       <div class="modal-hdr"><span class="modal-t" id="usbInfoTitle">Port USB</span><button class="modal-x" onclick="closeUsbInfo()">✕</button></div>
       <div class="modal-body" id="usbInfoBody"></div>
     </div>`;
@@ -1564,17 +1680,18 @@ function openUsbInfo(slot){
     modal.addEventListener("click",e=>{if(e.target===modal) closeUsbInfo();});
   }
   document.getElementById("usbInfoTitle").textContent = "Port USB "+(slot+1);
-  const connected = ws && ws.readyState===1 && serialConnected;
+  const connected = slot===0 ? (ws && ws.readyState===1 && serialConnected) : (ws && ws.readyState===1 && serialConnected2);
+  const portName = slot===0 ? (serialPortName||"—") : (serialPortName2||"—");
   document.getElementById("usbInfoBody").innerHTML = `
-    <div class="led-details" style="display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <div class="p-row"><div class="p-lbl">État</div><div style="flex:1;font-weight:600;color:${connected?'var(--green)':'var(--text3)'}">${connected?'● Connecté':'○ Non connecté'}</div></div>
-      <div class="p-row"><div class="p-lbl">Port COM</div><div style="flex:1;font-family:'JetBrains Mono',monospace">${serialPortName||"—"}</div></div>
+      <div class="p-row"><div class="p-lbl">Port COM</div><div style="flex:1;font-family:'JetBrains Mono',monospace">${portName}</div></div>
       <div class="p-row"><div class="p-lbl">Vitesse</div><div style="flex:1;font-family:'JetBrains Mono',monospace">${connected?"115200 bauds":"—"}</div></div>
     </div>
     <div class="sep" style="margin:12px 0"></div>
     <div style="display:flex;gap:6px">
-      <button class="tbtn" style="flex:1" onclick="refreshPorts()">🔄 Détecter les ports</button>
-      <button class="tbtn pr" style="flex:1" onclick="switchView('settings',null);closeUsbInfo()">⚙ Paramètres série</button>
+      <button class="tbtn" style="flex:1" onclick="refreshPorts()">🔄 Détecter</button>
+      <button class="tbtn pr" style="flex:1" onclick="switchView('settings',null);switchSettingsTab('serial');closeUsbInfo()">⚙ Configurer</button>
     </div>
     <div id="usbPortsList" style="margin-top:10px;font-size:10px;color:var(--text3)"></div>`;
   modal.classList.add("open");
@@ -1808,14 +1925,22 @@ function exportLog(){
 // NAVIGATION
 // ═══════════════════════════════════════════════════════════════
 function switchView(id,btnEl) {
-  if(id==="overlay") setTimeout(initOverlayTab, 0);
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   const v=document.getElementById("v-"+id); if(v) v.classList.add("active");
-  const titles={device:"Device",metrics:"Métriques",profiles:"Profils",plugins:"Plugins",serial:"Serial Monitor",settings:"Paramètres",overlay:"Overlay"};
+  const titles={device:"Device",metrics:"Métriques",profiles:"Profils",plugins:"Plugins",serial:"Serial Monitor",settings:"Paramètres"};
   const t=document.getElementById("viewTitle"); if(t) t.textContent=titles[id]||id;
   if(id==="profiles") renderProfiles();
   if(id==="plugins") renderPlugins();
-  if(id==="settings") loadProtocolFields();
+  if(id==="settings"){ loadProtocolFields(); setTimeout(initOverlayTab,0); }
+}
+function switchSettingsTab(tab) {
+  ["general","serial","proto","overlay"].forEach(t=>{
+    const c=document.getElementById("stab-content-"+t);
+    const b=document.getElementById("stab-"+t);
+    if(c) c.style.display=t===tab?"block":"none";
+    if(b) b.classList.toggle("active",t===tab);
+  });
+  if(tab==="overlay") initOverlayTab();
 }
 function sbActive(el){document.querySelectorAll(".sb-btn").forEach(b=>b.classList.remove("active"));el.classList.add("active");}
 
@@ -1841,24 +1966,38 @@ function saveConfig(){
   toast("✓ Configuration enregistrée");
 }
 function refreshPorts(){wsSend({type:"get_ports"});}
-function connectSerial(){wsSend({type:"connect_serial",port:document.getElementById("serialPortInput")?.value||"AUTO"});}
+function connectSerial(slot=0){
+  const port = slot===0
+    ? (document.getElementById("serialPortInput")?.value||"AUTO")
+    : (document.getElementById("serialPortInput2")?.value||"");
+  const baud = parseInt(document.getElementById(slot===0?"baudRate1":"baudRate2")?.value||"115200");
+  wsSend({type:"connect_serial",port,baud,slot});
+}
 function renderPorts(ports){
+  const pill = ports.length
+    ? ports.map(p=>`<span style="cursor:pointer;color:var(--accent);text-decoration:underline;margin-right:8px" onclick="document.getElementById('serialPortInput').value='${p}'">${p}</span>`).join("")
+    : "Aucun port détecté";
+  const pill2 = ports.length
+    ? ports.map(p=>`<span style="cursor:pointer;color:var(--accent);text-decoration:underline;margin-right:8px" onclick="document.getElementById('serialPortInput2').value='${p}'">${p}</span>`).join("")
+    : "Aucun port détecté";
   const el=document.getElementById("portsList");
-  if(el) el.innerHTML=ports.length?ports.map(p=>`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="document.getElementById('serialPortInput').value='${p}'">${p}</span>`).join(" · "):"Aucun port détecté";
-  const el2=document.getElementById("usbPortsList");
-  if(el2) el2.innerHTML = ports.length ? "Ports disponibles : "+ports.join(", ") : "Aucun port série détecté sur cette machine.";
+  if(el) el.innerHTML = pill;
+  const el2=document.getElementById("portsList2");
+  if(el2) el2.innerHTML = pill2;
+  const el3=document.getElementById("usbPortsList");
+  if(el3) el3.innerHTML = ports.length ? "Ports disponibles : "+ports.join(", ") : "Aucun port série détecté.";
 }
 
 // ═══════════════════════════════════════════════════════════════
 // PROTOCOLE ESP32 — config des trames série (entrantes et sortantes)
 // ═══════════════════════════════════════════════════════════════
 const PROTO_DEFAULTS = {
-  in_press:        '{"t":"press","i":{i}}',
-  in_long_press:   '{"t":"long_press","i":{i}}',
-  in_double_click: '{"t":"double_click","i":{i}}',
-  in_release:      '{"t":"release","i":{i}}',
-  in_pot:          '{"t":"pot","i":{i},"v":{v}}',
-  out_led:         '{"t":"led","s":{i},"v":{v}}',
+  in_press:        'btn{i}:on',
+  in_long_press:   '',
+  in_double_click: '',
+  in_release:      'btn{i}:off',
+  in_pot:          'pot{i}:{v}',
+  out_led:         'led{i}:{v}',
 };
 function getProtocol(){
   return cfg.protocol || {...PROTO_DEFAULTS};
@@ -1931,40 +2070,56 @@ function getOverlayCfg() {
 }
 function initOverlayTab() {
   const ov = getOverlayCfg();
-  document.getElementById("ov_cell_size").value = ov.cell_size||56;
-  document.getElementById("ov_delay").value     = ov.delay||3;
-  document.getElementById("ov_position").value  = ov.position||"br";
-  document.getElementById("ov_alpha").value     = ov.alpha||97;
+  const cs=document.getElementById("ov_cell_size"); if(cs) cs.value = ov.cell_size||56;
+  const dl=document.getElementById("ov_delay"); if(dl) dl.value = ov.delay||3;
+  const po=document.getElementById("ov_position"); if(po) po.value = ov.position||"br";
+  const al=document.getElementById("ov_alpha"); if(al) al.value = ov.alpha||97;
   renderOverlayPotsEditor();
 }
+// Simulator helpers
+function _simBtn(slot, type){
+  const proto = getProtocol();
+  let raw = "";
+  if(type==="press") raw = (proto.in_press||"btn{i}:on").replace("{i}",slot);
+  else if(type==="long_press") raw = (proto.in_long_press||"").replace("{i}",slot) || (proto.in_press||"btn{i}:on").replace("{i}",slot);
+  else if(type==="double_click") raw = (proto.in_double_click||"").replace("{i}",slot) || (proto.in_press||"btn{i}:on").replace("{i}",slot);
+  if(raw){ document.getElementById("protoTestSample").value=raw; simulateEsp32Frame(); }
+}
+function simBtnPress(){ const s=parseInt(document.getElementById("simBtnSel")?.value||0); _simBtn(s,"press"); }
+function simBtnLong(){ const s=parseInt(document.getElementById("simBtnSel")?.value||0); _simBtn(s,"long_press"); }
+function simBtnDouble(){ const s=parseInt(document.getElementById("simBtnSel")?.value||0); _simBtn(s,"double_click"); }
 function renderOverlayPotsEditor() {
   const ov = getOverlayCfg();
-  const profile = cfg&&cfg.profiles&&cfg.profiles[cfg.active_profile];
+  const profile = cfg&&cfg.profiles&&cfg.profiles[cfg.active_profile||activeProfile];
   const pots = (profile&&profile.pots)||{};
   let html = "";
   for (let i=0;i<4;i++) {
     const pot = pots[i]||{};
-    const potCfg = (cfg.pots&&cfg.pots[i])||{};
+    // Images are now stored in pot data directly (per profile)
+    const hasImg = !!pot.image;
     const name = pot.name||`Pot ${i+1}`;
-    const hasImg = !!potCfg.image;
-    html += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:8px">Pot ${i+1} — ${name}</div>
+    const ovPot = (ov.pots&&(ov.pots[i]||ov.pots[String(i)]))||{};
+    html += `<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;background:var(--bg0)">
+      <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+        <span style="font-size:9px;background:var(--accent-dim);color:var(--accent);padding:1px 5px;border-radius:4px;font-family:monospace">POT ${i+1}</span>
+        ${name}
+      </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:10px;color:var(--text3);width:55px">Image</span>
+        <span style="font-size:10px;color:var(--text3);width:50px">Image</span>
         ${hasImg
-          ? `<img src="${potCfg.image}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
-          : `<div style="width:36px;height:36px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px">◎</div>`}
+          ? `<img src="${pot.image}" style="width:38px;height:38px;object-fit:cover;border-radius:50%;border:2px solid var(--accent)">`
+          : `<div style="width:38px;height:38px;border:1px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text3)">◎</div>`}
         <input type="file" accept="image/*" id="ov_pot_img_${i}" style="display:none" onchange="onOvPotImgChosen(${i},this)">
         <button class="tbtn" onclick="document.getElementById('ov_pot_img_${i}').click()">🖼 Importer</button>
         ${hasImg?`<button class="tbtn" onclick="clearOvPotImg(${i})">✕ Supprimer</button>`:""}
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-        <span style="font-size:10px;color:var(--text3);width:55px">Texte</span>
-        <input class="inp" id="ov_pot_text_${i}" value="${potCfg.text||""}" placeholder="Vide = auto (nom + action)" style="flex:1">
+        <span style="font-size:10px;color:var(--text3);width:50px">Texte</span>
+        <input class="inp" id="ov_pot_text_${i}" value="${ovPot.text||""}" placeholder="Vide = auto" style="flex:1">
       </div>
     </div>`;
   }
-  document.getElementById("ov_pots_cfg").innerHTML = html;
+  const el=document.getElementById("ov_pots_cfg"); if(el) el.innerHTML = html;
 }
 function onOvPotImgChosen(i, input) {
   const file = input.files[0]; if(!file) return;
@@ -1974,28 +2129,33 @@ function onOvPotImgChosen(i, input) {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width=64; c.height=64;
       c.getContext("2d").drawImage(img,0,0,64,64);
-      if(!cfg.overlay) cfg.overlay={cell_size:56,delay:3,position:"br",alpha:97,pots:{}};
-      if(!cfg.overlay.pots) cfg.overlay.pots={};
-      if(!cfg.overlay.pots[i]) cfg.overlay.pots[i]={};
-      cfg.overlay.pots[i].image = c.toDataURL("image/png",0.85);
+      // Store image in current profile's pot data (per-profile)
+      if(!cfg.profiles[activeProfile]) return;
+      if(!cfg.profiles[activeProfile].pots) cfg.profiles[activeProfile].pots={};
+      if(!cfg.profiles[activeProfile].pots[i]) cfg.profiles[activeProfile].pots[i]={};
+      cfg.profiles[activeProfile].pots[i].image = c.toDataURL("image/png",0.85);
       renderOverlayPotsEditor();
+      buildPots();
+      markDirty();
     };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
 }
 function clearOvPotImg(i) {
-  if(cfg.overlay&&cfg.overlay.pots&&cfg.overlay.pots[i]) {
-    delete cfg.overlay.pots[i].image;
+  if(cfg.profiles[activeProfile]?.pots?.[i]) {
+    delete cfg.profiles[activeProfile].pots[i].image;
     renderOverlayPotsEditor();
+    buildPots();
+    markDirty();
   }
 }
 function saveOverlayCfg() {
   if(!cfg.overlay) cfg.overlay={};
-  cfg.overlay.cell_size = parseInt(document.getElementById("ov_cell_size").value)||56;
-  cfg.overlay.delay     = parseInt(document.getElementById("ov_delay").value)||3;
-  cfg.overlay.position  = document.getElementById("ov_position").value;
-  cfg.overlay.alpha     = parseInt(document.getElementById("ov_alpha").value)||97;
+  cfg.overlay.cell_size = parseInt(document.getElementById("ov_cell_size")?.value)||56;
+  cfg.overlay.delay     = parseInt(document.getElementById("ov_delay")?.value)||3;
+  cfg.overlay.position  = document.getElementById("ov_position")?.value||"br";
+  cfg.overlay.alpha     = parseInt(document.getElementById("ov_alpha")?.value)||97;
   if(!cfg.overlay.pots) cfg.overlay.pots={};
   for(let i=0;i<4;i++) {
     if(!cfg.overlay.pots[i]) cfg.overlay.pots[i]={};
@@ -2004,7 +2164,7 @@ function saveOverlayCfg() {
   }
   wsSend({type:"save_config",data:cfg});
   const msg = document.getElementById("ovSaveMsg");
-  msg.textContent="✓ Enregistré"; setTimeout(()=>msg.textContent="",2000);
+  if(msg){ msg.textContent="✓ Enregistré"; setTimeout(()=>msg.textContent="",2000); }
 }
 function previewOverlay() { wsSend({type:"preview_overlay"}); }
 
