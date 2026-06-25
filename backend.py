@@ -301,13 +301,16 @@ DEFAULT_CONFIG = {
     # Le format par défaut reste le JSON historique pour ne rien casser, mais
     # tout est personnalisable depuis les Paramètres sans toucher au code.
     "protocol": {
-        "in_press":        "{\"t\":\"press\",\"i\":{i}}",
-        "in_long_press":   "{\"t\":\"long_press\",\"i\":{i}}",
-        "in_double_click": "{\"t\":\"double_click\",\"i\":{i}}",
-        "in_release":      "{\"t\":\"release\",\"i\":{i}}",
-        "in_pot":          "{\"t\":\"pot\",\"i\":{i},\"v\":{v}}",
-        "out_led":         "{\"t\":\"led\",\"s\":{i},\"v\":{v}}",
-    }
+        "in_press":        "btn{i}:on",
+        "in_long_press":   "",
+        "in_double_click": "",
+        "in_release":      "btn{i}:off",
+        "in_pot":          "pot{i}:{v}",
+        "out_led":         "led{i}:{v}",
+    },
+    "serial_port2": "",
+    "baud_rate": 115200,
+    "baud_rate2": 115200
 }
 
 def pattern_to_regex(pattern: str) -> "re.Pattern":
@@ -677,8 +680,14 @@ class Metrics:
     def __init__(self):
         self._net_prev=psutil.net_io_counters(); self._net_t=time.time()
         self._ohm=None
+        self._ohm_tries=0
         if WMI_OK:
             try: self._ohm=wmilib.WMI(namespace="root\\OpenHardwareMonitor")
+            except: pass
+        # Fallback: try reading CPU temp via win32 WMI thermal zone
+        self._thermal_wmi=None
+        if WMI_OK:
+            try: self._thermal_wmi=wmilib.WMI(namespace="root\\wmi")
             except: pass
 
     def _read_nvidia_smi(self):
@@ -752,12 +761,30 @@ class Metrics:
         return m
 
     def _ohm_val(self, typ, frag):
-        if not self._ohm: return None
-        try:
-            for s in self._ohm.Sensor():
-                if s.SensorType==typ and frag.lower() in s.Name.lower():
-                    return round(s.Value,1)
-        except: pass
+        """Lit une valeur depuis OpenHardwareMonitor (WMI) si dispo,
+        sinon tente la lecture via MSAcpi_ThermalZoneTemperature (natif Windows)."""
+        # 1. OpenHardwareMonitor (le plus précis, nécessite OHM en cours d'exec)
+        if self._ohm:
+            try:
+                for s in self._ohm.Sensor():
+                    if s.SensorType==typ and frag.lower() in s.Name.lower():
+                        return round(s.Value,1)
+            except: pass
+
+        # 2. Fallback natif Windows : MSAcpi_ThermalZoneTemperature
+        #    Ne nécessite aucun outil externe — lecture directe du BIOS ACPI.
+        #    Disponible sur la plupart des PC (surtout laptops), souvent absent
+        #    sur les desktops sans capteurs ACPI complets. Retourne None dans ce cas.
+        if typ == "Temperature" and self._thermal_wmi:
+            try:
+                for zone in self._thermal_wmi.MSAcpi_ThermalZoneTemperature():
+                    # ACPI renvoie la temp en dixièmes de Kelvin
+                    k = zone.CurrentTemperature
+                    if k and k > 0:
+                        return round(k / 10.0 - 273.15, 1)
+            except: pass
+
+        # 3. Fallback nvidia-smi pour GPU (déjà géré dans _read_nvidia_smi)
         return None
 
 # ── OVERLAY SYSTÈME (mini-streamdeck au changement de profil) ────────────────
@@ -1024,47 +1051,105 @@ class AppWatcher:
 
 # ── SERIAL ────────────────────────────────────────────────────────────────────
 class Transport:
-    def __init__(self, on_msg):
-        self._cb=on_msg; self.ser=None; self.port_name=None
+    """Deux ports série indépendants (slot 0 = USB1, slot 1 = USB2).
+    Détection automatique du type d'appui à partir du timing on/off :
+      - on→off < 400 ms  → press (appui simple)
+      - on→off ≥ 400 ms  → long_press
+      - deux 'on' en < 300 ms → double_click
+    Aucun calcul côté ESP32 requis : il envoie juste btn{i}:on / btn{i}:off.
+    """
+    LONG_MS   = 400   # ms au-delà desquels c'est un long press
+    DOUBLE_MS = 300   # ms entre deux ON pour détecter un double-clic
 
-    def start(self, port="AUTO"):
+    def __init__(self, on_msg):
+        self._cb = on_msg
+        self._slots = [None, None]   # serial.Serial | None
+        self._port_names = [None, None]
+        # timing data per button index: {btn_idx: {"on_t": float, "last_on": float}}
+        self._btn_state: dict = {}
+
+    def start(self, port="AUTO", baud=115200, slot=0):
         if not SERIAL_OK: return
-        if port=="AUTO":
-            ports=serial.tools.list_ports.comports()
-            port=next((p.device for p in ports if any(k in p.description.upper() for k in ["CP210","CH340","USB","FTDI"])),
-                      ports[0].device if ports else None)
+        # Ferme l'ancien port de ce slot si nécessaire
+        old = self._slots[slot]
+        if old:
+            try: old.close()
+            except: pass
+            self._slots[slot] = None
+            self._port_names[slot] = None
+
+        if port == "AUTO":
+            ports = serial.tools.list_ports.comports()
+            # Évite de réutiliser un port déjà assigné à l'autre slot
+            other = self._port_names[1 - slot]
+            candidates = [p.device for p in ports
+                          if any(k in p.description.upper() for k in ["CP210","CH340","USB","FTDI"])
+                          and p.device != other]
+            if not candidates:
+                candidates = [p.device for p in ports if p.device != other]
+            port = candidates[0] if candidates else None
+
         if not port: return
         try:
-            self.ser=serial.Serial(port,115200,timeout=0.1)
-            self.port_name=port
-            threading.Thread(target=self._loop,daemon=True).start()
+            ser = serial.Serial(port, baud, timeout=0.1)
+            self._slots[slot] = ser
+            self._port_names[slot] = port
+            threading.Thread(target=self._loop, args=(ser, slot), daemon=True).start()
+            log.info(f"Serial slot {slot}: {port} @ {baud}")
         except Exception as e:
-            log.error(f"Serial: {e}")
-            self.port_name=None
+            log.error(f"Serial slot {slot}: {e}")
 
-    def is_connected(self) -> bool:
-        return bool(self.ser and self.ser.is_open)
+    def is_connected(self, slot=0) -> bool:
+        s = self._slots[slot]
+        return bool(s and s.is_open)
 
-    def _loop(self):
-        while self.ser and self.ser.is_open:
+    @property
+    def port_name(self):
+        return self._port_names[0]
+
+    def _loop(self, ser, slot):
+        while ser and ser.is_open:
             try:
-                line=self.ser.readline().decode("utf-8",errors="ignore").strip()
-                if line: self._cb(line)
+                line = ser.readline().decode("utf-8", errors="ignore").strip()
+                if line:
+                    self._cb(line, slot)
             except:
                 time.sleep(1)
-        self.port_name=None
+        if self._slots[slot] is ser:
+            self._slots[slot] = None
+            self._port_names[slot] = None
+
+    def _handle_timing(self, btn_idx: int, event: str, on_msg_fn):
+        """Calcule le type d'appui à partir du timing on/off."""
+        now = time.time()
+        st  = self._btn_state.setdefault(btn_idx, {})
+
+        if event == "on":
+            last_on = st.get("last_on")
+            st["on_t"] = now
+            st["last_on"] = now
+            if last_on and (now - last_on) * 1000 < self.DOUBLE_MS:
+                # Deux ON rapides = double clic
+                st["last_on"] = None  # consommé
+                on_msg_fn(btn_idx, "double_click")
+        elif event == "off":
+            on_t = st.get("on_t")
+            if on_t is None: return
+            duration_ms = (now - on_t) * 1000
+            st["on_t"] = None
+            ev = "long_press" if duration_ms >= self.LONG_MS else "press"
+            on_msg_fn(btn_idx, ev)
 
     def send(self, obj):
-        if self.ser and self.ser.is_open:
-            try: self.ser.write((json.dumps(obj,separators=(",",":"))+"\n").encode())
-            except: pass
+        for ser in self._slots:
+            if ser and ser.is_open:
+                try: ser.write((json.dumps(obj, separators=(",",":"))+"\n").encode())
+                except: pass
 
-    def send_raw(self, line: str):
-        """Envoie une ligne texte brute déjà formatée (utilisé pour le
-        protocole LED configurable, qui peut être du JSON ou tout autre
-        format texte selon ce que le firmware ESP32 attend)."""
-        if self.ser and self.ser.is_open:
-            try: self.ser.write((line+"\n").encode())
+    def send_raw(self, line: str, slot=0):
+        ser = self._slots[slot]
+        if ser and ser.is_open:
+            try: ser.write((line+"\n").encode())
             except: pass
 
 # ── MACRODECK CORE ────────────────────────────────────────────────────────────
@@ -1227,46 +1312,69 @@ class MacroDeck:
                     self._broadcast({"type":"profile_changed","profile":name})
                 return
 
-    def _on_esp32(self, raw: str):
+    def _on_esp32(self, raw: str, slot: int = 0):
         raw = raw.strip()
         if not raw: return
         proto = self.cfg.data.get("protocol", {})
 
-        # Essaie chaque patron configuré dans l'ordre, et route vers le bon
-        # traitement dès qu'un patron correspond à la ligne brute reçue.
-        # Garde aussi un fallback JSON historique pour ne jamais casser un
-        # firmware déjà en place tant que l'utilisateur n'a rien reconfiguré.
-        for ev_key, ev_name in [("in_press","press"),("in_long_press","long_press"),
-                                  ("in_double_click","double_click"),("in_release","release")]:
-            pat = proto.get(ev_key, "")
-            if not pat: continue
+        # ── Potard ─────────────────────────────────────────────────────────
+        pat_pot = proto.get("in_pot", "")
+        if pat_pot:
             try:
-                m = pattern_to_regex(pat).match(raw)
-            except Exception as e:
-                log.error(f"Patron '{ev_key}' invalide: {e}"); continue
-            if m:
-                idx = int(m.group("i"))
-                if ev_name == "release":
-                    self._broadcast({"type":"button_event","button":idx,"event":"release"})
-                    return
-                profile=self.cfg.active()
-                actions=profile["buttons"].get(str(idx),{}).get(ev_name,[])
-                threading.Thread(target=self.engine.run,args=(actions,),daemon=True).start()
-                self._broadcast({"type":"button_event","button":idx,"event":ev_name})
-                return
-
-        pat = proto.get("in_pot","")
-        if pat:
-            try:
-                m = pattern_to_regex(pat).match(raw)
+                m = pattern_to_regex(pat_pot).match(raw)
                 if m:
-                    idx=int(m.group("i")); val=int(m.group("v"))
-                    pot_cfg=self.cfg.active()["pots"].get(str(idx),{})
+                    idx = int(m.group("i")); val = int(m.group("v"))
+                    pot_cfg = self.cfg.active()["pots"].get(str(idx), {})
                     self.engine.run_pot(pot_cfg, val)
                     self._broadcast({"type":"pot_event","pot":idx,"value":val})
                     return
             except Exception as e:
                 log.error(f"Patron 'in_pot' invalide: {e}")
+
+        # ── Bouton ON/OFF (timing-based) ────────────────────────────────────
+        pat_on  = proto.get("in_press", "btn{i}:on")
+        pat_off = proto.get("in_release", "btn{i}:off")
+
+        def _dispatch_btn(idx, ev_name):
+            profile = self.cfg.active()
+            actions = profile["buttons"].get(str(idx), {}).get(ev_name, [])
+            if actions:
+                threading.Thread(target=self.engine.run, args=(actions,), daemon=True).start()
+            self._broadcast({"type":"button_event","button":idx,"event":ev_name})
+
+        if pat_on:
+            try:
+                m = pattern_to_regex(pat_on).match(raw)
+                if m:
+                    idx = int(m.group("i"))
+                    self.transport._handle_timing(idx, "on", _dispatch_btn)
+                    return
+            except Exception as e:
+                log.error(f"Patron 'in_press' invalide: {e}")
+
+        if pat_off:
+            try:
+                m = pattern_to_regex(pat_off).match(raw)
+                if m:
+                    idx = int(m.group("i"))
+                    self.transport._handle_timing(idx, "off", _dispatch_btn)
+                    self._broadcast({"type":"button_event","button":idx,"event":"release"})
+                    return
+            except Exception as e:
+                log.error(f"Patron 'in_release' invalide: {e}")
+
+        # ── Patrons optionnels long/double (si firmware les envoie directement) ──
+        for ev_key, ev_name in [("in_long_press","long_press"),("in_double_click","double_click")]:
+            pat = proto.get(ev_key, "")
+            if not pat: continue
+            try:
+                m = pattern_to_regex(pat).match(raw)
+                if m:
+                    idx = int(m.group("i"))
+                    _dispatch_btn(idx, ev_name)
+                    return
+            except Exception as e:
+                log.error(f"Patron '{ev_key}' invalide: {e}")
 
         # Fallback JSON historique (rétrocompatibilité avec un firmware déjà
         # flashé sur l'ancien protocole, même si "protocol" a été modifié).
@@ -1418,13 +1526,21 @@ class MacroDeck:
             asyncio.ensure_future(_do_pick_file())
 
         elif t=="connect_serial":
-            self.transport.start(msg.get("port","AUTO"))
+            slot = int(msg.get("slot", 0))
+            baud = int(msg.get("baud", 115200))
+            self.transport.start(msg.get("port","AUTO"), baud=baud, slot=slot)
             await ws.send(json.dumps({"type":"serial_status",
-                "connected":self.transport.is_connected(), "port":self.transport.port_name}))
+                "connected":self.transport.is_connected(0),
+                "connected2":self.transport.is_connected(1),
+                "port":self.transport._port_names[0],
+                "port2":self.transport._port_names[1]}))
 
         elif t=="get_serial_status":
             await ws.send(json.dumps({"type":"serial_status",
-                "connected":self.transport.is_connected(), "port":self.transport.port_name}))
+                "connected":self.transport.is_connected(0),
+                "connected2":self.transport.is_connected(1),
+                "port":self.transport._port_names[0],
+                "port2":self.transport._port_names[1]}))
 
         elif t=="save_protocol":
             # Valide chaque patron avant de sauvegarder : un regex invalide
