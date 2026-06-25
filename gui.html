@@ -239,7 +239,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 .lf{color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ── VIEW: SETTINGS ── */
-.settings-view{flex:1;overflow-y:auto;padding:24px;background:var(--bg0)}
+.settings-view{flex:1;overflow-y:auto;padding:24px}
 .settings-inner{max-width:560px}
 .settings-title{font-size:13px;font-weight:600;margin-bottom:18px}
 
@@ -313,16 +313,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ── OVERLAY MINI-STREAMDECK (changement de profil) ── */
-#profileOverlay{position:fixed;bottom:20px;right:20px;z-index:9998;background:var(--device-bg,var(--bg1));border:1px solid var(--border2);border-radius:14px;padding:14px;box-shadow:0 16px 40px #00000050;opacity:0;transform:translateY(16px) scale(.96);transition:opacity .25s ease,transform .25s ease;pointer-events:none;width:220px}
-#profileOverlay.show{opacity:1;transform:translateY(0) scale(1)}
-.po-header{display:flex;align-items:center;gap:6px;margin-bottom:10px}
-.po-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent-glow);flex-shrink:0}
-.po-title{font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.po-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
-.po-btn{aspect-ratio:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;overflow:hidden;padding:3px}
-.po-btn-ic{font-size:13px;line-height:1}
-.po-btn-ic-img{width:18px;height:18px;object-fit:cover;border-radius:4px}
-.po-btn-nm{font-size:6.5px;color:var(--text2);text-align:center;line-height:1.1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+
 
 /* Responsive */
 @media(max-width:700px){
@@ -601,51 +593,52 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
       <button class="tbtn" onclick="closeModal()">Annuler</button>
       <button class="tbtn pr" onclick="confirmAction()">✓ Ajouter</button>
     </div>
-  <!-- ── VIEW OVERLAY ── -->
-    <div class="view" id="v-overlay">
-      <div class="settings-view">
-        <div class="settings-inner">
-          <div class="settings-title">🪟 Overlay — Popup changement de profil</div>
-          <div class="grp">
-            <div class="grp-lbl">Taille des cellules (px)</div>
-            <input class="inp" type="number" id="ov_cell_size" value="56" min="32" max="100" style="width:80px">
-          </div>
-          <div class="grp">
-            <div class="grp-lbl">Durée d'affichage (secondes)</div>
-            <input class="inp" type="number" id="ov_delay" value="3" min="1" max="15" style="width:80px">
-          </div>
-          <div class="grp">
-            <div class="grp-lbl">Position</div>
-            <select class="sel" id="ov_position">
-              <option value="br">Bas droite (défaut)</option>
-              <option value="bl">Bas gauche</option>
-              <option value="tr">Haut droite</option>
-              <option value="tl">Haut gauche</option>
-            </select>
-          </div>
-          <div class="grp">
-            <div class="grp-lbl">Opacité (%)</div>
-            <input class="inp" type="number" id="ov_alpha" value="97" min="20" max="100" style="width:80px">
-          </div>
-          <div class="sep"></div>
-          <div class="grp-lbl" style="font-size:13px;font-weight:600;color:var(--text)">Zone potards</div>
-          <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
-            Remplace l'affichage automatique (nom + action) par une image ou un texte libre pour chaque potard.
-          </div>
-          <div id="ov_pots_cfg"></div>
-          <div style="display:flex;gap:8px;margin-top:14px">
-            <button class="tbtn pr" onclick="saveOverlayCfg()">💾 Enregistrer</button>
-            <button class="tbtn" onclick="previewOverlay()">👁 Prévisualiser</button>
-          </div>
-          <div id="ovSaveMsg" style="font-size:10px;margin-top:6px;color:var(--accent)"></div>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
 <div id="toast"></div>
-<div id="profileOverlay"></div>
+
+<!-- ── VIEW OVERLAY ── -->
+<!-- Note: injectée hors du DOM .views pour éviter le bug de nesting dans la modal.
+     switchView() cible v-overlay par ID, donc l'emplacement exact n'a pas d'importance
+     tant que c'est dans le shell et que .view.active{display:flex} s'applique. -->
+<div class="view" id="v-overlay" style="position:absolute;inset:0;top:46px;left:48px;z-index:10;background:var(--bg0);overflow-y:auto;flex-direction:column">
+  <div class="settings-inner" style="max-width:560px;padding:24px">
+    <div class="settings-title">🪟 Overlay — Popup changement de profil</div>
+    <div class="grp">
+      <div class="grp-lbl">Taille des cellules (px)</div>
+      <input class="inp" type="number" id="ov_cell_size" value="56" min="32" max="100" style="width:80px">
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Durée d'affichage (secondes)</div>
+      <input class="inp" type="number" id="ov_delay" value="3" min="1" max="15" style="width:80px">
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Position</div>
+      <select class="sel" id="ov_position">
+        <option value="br">Bas droite (défaut)</option>
+        <option value="bl">Bas gauche</option>
+        <option value="tr">Haut droite</option>
+        <option value="tl">Haut gauche</option>
+      </select>
+    </div>
+    <div class="grp">
+      <div class="grp-lbl">Opacité (%)</div>
+      <input class="inp" type="number" id="ov_alpha" value="97" min="20" max="100" style="width:80px">
+    </div>
+    <div class="sep"></div>
+    <div class="grp-lbl" style="font-size:13px;font-weight:600;color:var(--text)">Zone potards</div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:10px">
+      Remplace l'affichage automatique (nom + action) par une image ou un texte libre pour chaque potard.
+    </div>
+    <div id="ov_pots_cfg"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="tbtn pr" onclick="saveOverlayCfg()">💾 Enregistrer</button>
+      <button class="tbtn" onclick="previewOverlay()">👁 Prévisualiser</button>
+    </div>
+    <div id="ovSaveMsg" style="font-size:10px;margin-top:6px;color:var(--accent)"></div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -885,35 +878,7 @@ function getPotData(i) {
 // changement de profil, pour visualiser la disposition des boutons
 // sans avoir à l'apprendre par cœur.
 // ═══════════════════════════════════════════════════════════════
-let _profileOverlayTimer = null;
-function showProfileOverlay(profileKey){
-  const profile = cfg.profiles?.[profileKey];
-  if(!profile) return;
-  const el = document.getElementById("profileOverlay");
-  if(!el) return;
 
-  const btns = [];
-  for(let i=0;i<8;i++){
-    const b = profile.buttons?.[i] || {icon: DEFAULT_BTNS[i]?.icon||"⭐", label: DEFAULT_BTNS[i]?.label||"Btn "+(i+1)};
-    btns.push(b);
-  }
-  el.innerHTML = `
-    <div class="po-header"><div class="po-dot"></div><div class="po-title">${profile.name||profileKey}</div></div>
-    <div class="po-grid">${btns.map(b=>{
-      const ic = b.iconImage
-        ? `<img src="${b.iconImage}" alt="" style="width:18px;height:18px;object-fit:cover;border-radius:4px">`
-        : `<div class="po-btn-ic">${b.icon||"⭐"}</div>`;
-      return `<div class="po-btn">${ic}<div class="po-btn-nm">${(b.label||"").slice(0,10)}</div></div>`;
-    }).join("")}</div>`;
-
-  // Relance l'animation même si l'overlay est déjà visible (changement rapide de profil)
-  el.classList.remove("show");
-  void el.offsetWidth; // force reflow pour rejouer la transition
-  el.classList.add("show");
-
-  clearTimeout(_profileOverlayTimer);
-  _profileOverlayTimer = setTimeout(() => el.classList.remove("show"), 3500);
-}
 
 // ═══════════════════════════════════════════════════════════════
 // WEBSOCKET
@@ -930,7 +895,7 @@ function connectWS() {
       if(m.type==="update_available") { handleUpdateAvailable(m); }
       if(m.type==="button_event") { flashBtn(m.button); addLog("rx",m.event||"press",`BTN${m.button+1}`); }
       if(m.type==="pot_event") { animatePot(m.pot,m.value); addLog("rx","pot",`POT${m.pot+1} ${m.value}%`); }
-      if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); showProfileOverlay(m.profile); toast("Profil : "+getProfileName(m.profile)); }
+      if(m.type==="profile_changed") { activeProfile = m.profile; syncProfile(); toast("Profil : "+getProfileName(m.profile)); }
       if(m.type==="apps") { installedApps = m.data; appsLoaded = true; renderAppPicker(); }
       if(m.type==="ports") { renderPorts(m.data); }
       if(m.type==="processes") { renderProcessPicker(m.data); }
@@ -1426,7 +1391,6 @@ function switchProfile(key) {
   wsSend({type:"set_profile",profile:key});
   syncProfile();
   renderProfiles();
-  showProfileOverlay(key);
   toast("Profil actif : "+getProfileName(key));
 }
 function nextProfile() {
