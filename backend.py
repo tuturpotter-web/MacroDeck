@@ -835,9 +835,9 @@ class ProfileOverlayWindow:
                         log.warning(f"Overlay _show: {e}")
             except _queue.Empty:
                 pass
-            root.after(100, poll)
+            root.after(30, poll)  # 30ms pour latence quasi-nulle
 
-        root.after(100, poll)
+        root.after(30, poll)
         root.mainloop()
 
     def _show(self, profile: dict, ov_cfg: dict = None):
@@ -883,6 +883,8 @@ class ProfileOverlayWindow:
         except: pass
         win.configure(bg=ACC)
         win.geometry(f"{W}x{H}+{X}+{Y}")
+        # Force immediate display before building widgets — window appears instantly
+        win.update_idletasks()
 
         main = tk.Frame(win, bg=BG)
         main.pack(padx=1, pady=1, fill="both", expand=True)
@@ -968,7 +970,8 @@ class ProfileOverlayWindow:
             name    = (p.get("name") or f"Pot {i+1}")[:8]
             action  = POT_LABELS.get(p.get("action",""), (p.get("action","") or "—")[:8])
             custom_text = pot_ov.get("text","") if isinstance(pot_ov, dict) else ""
-            img_data    = pot_ov.get("image","") if isinstance(pot_ov, dict) else ""
+            # Images are stored directly in profile pots (per-profile), not in overlay config
+            img_data = p.get("image","") or (pot_ov.get("image","") if isinstance(pot_ov, dict) else "")
 
             outer = tk.Frame(pf, bg=BDR)
             outer.grid(row=0, column=i, padx=GAP//2)
@@ -1024,6 +1027,8 @@ class ProfileOverlayWindow:
             except: pass
             if self._popup is win: self._popup = None
         self._close_timer = root.after(DELAY, _close)
+        # Force render of all widgets immediately — no visible build delay
+        win.update_idletasks()
 
     def show_profile(self, profile: dict, ov_cfg: dict = None):
         """Affiche l'overlay pour ce profil. Thread-safe."""
@@ -1801,28 +1806,51 @@ def _notify_already_running():
         try:
             ctypes.windll.user32.MessageBoxW(
                 0,
-                "MacroDeck est déjà lancé en arrière-plan.\n\n"
-                "Ouvre http://127.0.0.1:8766/gui.html dans ton navigateur pour l'utiliser.\n\n"
-                "Si ce n'est pas le cas, ouvre le Gestionnaire des tâches et termine\n"
-                "le processus MacroDeck.exe existant avant de relancer.",
-                "MacroDeck — déjà en cours",
+                "Imperium est déjà lancé.\n\n"
+                "Vérifie la barre des tâches ou le Gestionnaire des tâches.\n"
+                "Si nécessaire, termine le processus Imperium.exe avant de relancer.",
+                "Imperium — déjà en cours",
                 0x40 | 0x1000  # MB_ICONINFORMATION | MB_TOPMOST
             )
         except: pass
 
-def _open_browser_when_ready():
-    """Attend que le serveur HTTP réponde puis ouvre le navigateur sur la GUI."""
+def _open_app_window():
+    """Ouvre la GUI dans une vraie fenêtre Windows native via pywebview
+    (utilise WebView2 / Edge Chromium intégré à Windows 10/11).
+    Aucun navigateur externe n'est lancé — c'est une vraie application desktop."""
     import urllib.request
     url = f"http://127.0.0.1:{HTTP_PORT}/gui.html"
-    for _ in range(40):  # ~10s max
+    # Attendre que le serveur HTTP soit prêt
+    for _ in range(40):
         try:
             urllib.request.urlopen(url, timeout=0.5)
-            webbrowser.open(url)
-            return
+            break
         except Exception:
             time.sleep(0.25)
-    # Dernier recours : on ouvre quand même, au cas où le check ait raté
-    webbrowser.open(url)
+
+    try:
+        import webview
+        # Crée une fenêtre native Windows (titre + taille fixe, sans barre navigateur)
+        webview.create_window(
+            "Imperium",
+            url,
+            width=820,
+            height=680,
+            min_size=(640, 480),
+            frameless=False,
+            easy_drag=False,
+        )
+        # gui='edgechromium' utilise WebView2 (Edge) intégré à Windows 10/11
+        # gui='cef' ou 'qt' sont des fallbacks si Edge n'est pas dispo
+        webview.start(gui='edgechromium')
+        # Quand la fenêtre se ferme, on quitte le backend aussi
+        os._exit(0)
+    except Exception as e:
+        log.warning(f"pywebview indisponible ({e}), fallback navigateur")
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__=="__main__":
@@ -1831,7 +1859,7 @@ if __name__=="__main__":
         sys.exit(0)
 
     threading.Thread(target=_http_server, daemon=True).start()
-    threading.Thread(target=_open_browser_when_ready, daemon=True).start()
+    threading.Thread(target=_open_app_window, daemon=True).start()
 
     deck=MacroDeck()
     try:
