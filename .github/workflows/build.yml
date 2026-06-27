@@ -2,10 +2,8 @@ name: Build Imperium
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -23,14 +21,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           pip install pyinstaller
-          pip install pyserial psutil keyboard mouse websockets
+          pip install pyserial psutil keyboard mouse
           pip install pywin32 comtypes pycaw WMI
-          pip install pywebview
 
-      # Détermine la version : tag git (v1.2.3) si disponible, sinon build-N
       - name: Resolve version
         id: version
         shell: bash
@@ -43,21 +39,19 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
-      # Injecte la version dans backend.py (remplace la ligne APP_VERSION = "dev")
-      - name: Inject version into backend.py
+      - name: Inject version
         shell: pwsh
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          (Get-Content backend.py) -replace '^APP_VERSION = "dev"', "APP_VERSION = `"$v`"" | Set-Content backend.py
+          (Get-Content imperium_app.py) -replace '^APP_VERSION = "dev"', "APP_VERSION = `"$v`"" | Set-Content imperium_app.py
           Write-Host "APP_VERSION injected: $v"
 
-      - name: Build with PyInstaller (onedir)
+      - name: Build with PyInstaller
         run: |
           pyinstaller `
             --onedir `
             --noconsole `
             --name Imperium `
-            --add-data "gui.html;." `
             --hidden-import win32gui `
             --hidden-import win32process `
             --hidden-import win32api `
@@ -67,41 +61,29 @@ jobs:
             --hidden-import wmi `
             --hidden-import serial `
             --hidden-import serial.tools.list_ports `
-            --hidden-import websockets `
             --hidden-import keyboard `
             --hidden-import mouse `
             --hidden-import tkinter `
-            --hidden-import queue `
-            --hidden-import webview `
-            --hidden-import webview.platforms.winforms `
-            --collect-all webview `
-            backend.py
+            imperium_app.py
 
-      # Met à jour la version dans le script Inno Setup
       - name: Inject version into installer.iss
         shell: pwsh
         run: |
           $v = "${{ steps.version.outputs.version }}"
           (Get-Content installer.iss) -replace '#define MyAppVersion\s+"[^"]+"', "#define MyAppVersion `"$v`"" | Set-Content installer.iss
 
-      # Inno Setup est pré-installé sur windows-latest dans C:\Program Files (x86)\Inno Setup 6
       - name: Build installer with Inno Setup
         shell: pwsh
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (!(Test-Path $iscc)) {
-            # Fallback : chercher dans d'autres emplacements courants
             $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           }
-          if (!$iscc) {
-            Write-Error "Inno Setup introuvable sur le runner"
-            exit 1
-          }
-          Write-Host "Inno Setup trouvé : $iscc"
+          if (!$iscc) { Write-Error "Inno Setup introuvable"; exit 1 }
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload installer as artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Imperium-Setup
@@ -114,29 +96,18 @@ jobs:
           files: installer_output/Imperium_Setup.exe
           name: Imperium v${{ steps.version.outputs.version }}
           body: |
-            ## Imperium — build automatique #${{ github.run_number }}
+            ## Imperium v${{ steps.version.outputs.version }} — build #${{ github.run_number }}
 
             Compilé depuis le commit ${{ github.sha }}
 
             ### Installation
             1. Télécharge `Imperium_Setup.exe`
-            2. Lance-le et suis le wizard (1 minute)
-            3. Imperium s'installe dans `Program Files`, avec raccourci Menu Démarrer
-            4. Désinstallation propre depuis **Paramètres Windows → Applications**
+            2. Lance-le et suis le wizard
+            3. Imperium s'installe dans `Program Files`
 
-            ### Ce que l'installeur configure
-            - Installation dans `Program Files\Imperium`
-            - Raccourci Menu Démarrer (par défaut)
-            - Raccourci Bureau (optionnel)
-            - Lancement au démarrage Windows (optionnel)
-            - Désinstalleur enregistré dans Paramètres Windows
-
-            ### Plugins (sans recompiler)
-            Un dossier `plugins\` est créé automatiquement à côté de `Imperium.exe`.
-            Pose-y des fichiers `.json` pour ajouter de nouvelles actions, puis clique sur
-            "🔄 Recharger les plugins" dans l'onglet Plugins.
-
-            ### Dépendances externes (optionnel)
-            - [OpenHardwareMonitor](https://openhardwaremonitor.org/) pour les températures CPU/GPU
+            ### Nouveautés
+            - Application Windows native (plus de navigateur)
+            - Interface tkinter entièrement dark
+            - Zéro dépendance navigateur
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
