@@ -1,155 +1,97 @@
 """
-MacroDeck Backend v15.1
-- Console 100% cachée (SW_HIDE + FreeConsole)
-- Pas d'ouverture automatique du navigateur au démarrage
-- Profils indépendants avec création/suppression/renommage
-- Action switch_profile
-- Serveur HTTP silencieux sur 8766
-- WebSocket sur 8765
+Imperium — Application Windows native (tkinter)
+Zéro navigateur, zéro HTML, zéro WebSocket.
 """
 APP_VERSION = "dev"
-import sys, os, ctypes, threading, time, asyncio, json, subprocess, re
-import webbrowser, shutil, glob, logging, datetime
+import sys, os, ctypes, threading, time, json, subprocess, re
+import shutil, glob, logging, datetime, webbrowser
 from pathlib import Path
-from typing import Optional
+import tkinter as tk
+from tkinter import ttk, messagebox, colorchooser, filedialog
+import tkinter.font as tkfont
 
-# ── CACHER CONSOLE ──────────────────────────────────────────────────────────
+# ── CACHER CONSOLE ───────────────────────────────────────────────────────────
 if sys.platform == "win32":
     try:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 0)
+        if hwnd: ctypes.windll.user32.ShowWindow(hwnd, 0)
         ctypes.windll.kernel32.FreeConsole()
     except: pass
 
-# Flags pour qu'AUCUN sous-processus (os.system, shell=True, cmd.exe...)
-# ne puisse jamais faire apparaître une fenêtre console, même brièvement.
 CREATE_NO_WINDOW = 0x08000000
 _SI = None
 if sys.platform == "win32":
     _SI = subprocess.STARTUPINFO()
     _SI.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    _SI.wShowWindow = 0  # SW_HIDE
+    _SI.wShowWindow = 0
 
-def run_hidden(cmd, **kwargs):
-    """Remplace subprocess.Popen pour TOUJOURS cacher la fenêtre, shell=True ou non."""
-    kwargs.setdefault("creationflags", CREATE_NO_WINDOW)
-    kwargs.setdefault("startupinfo", _SI)
-    return subprocess.Popen(cmd, **kwargs)
+def run_hidden(cmd, **kw):
+    kw.setdefault("creationflags", CREATE_NO_WINDOW)
+    kw.setdefault("startupinfo", _SI)
+    return subprocess.Popen(cmd, **kw)
 
-def run_silent(cmd: str):
-    """Remplace os.system() par un appel qui ne crée jamais de fenêtre console."""
+def run_silent(cmd):
     return run_hidden(cmd, shell=True)
 
-def _get_default_browser_command() -> Optional[str]:
-    """Lit le VRAI navigateur par défaut choisi par l'utilisateur dans Windows
-    10/11 (clé de registre UserChoice), et retourne la commande pour le
-    lancer. C'est plus fiable que os.startfile()/webbrowser.open(), qui
-    peuvent parfois retomber sur une association "http" legacy cassée
-    (souvent Internet Explorer) au lieu du vrai navigateur configuré dans
-    Paramètres Windows > Applications par défaut."""
-    if sys.platform != "win32": return None
-    try:
-        import winreg
-        # 1. Quel ProgId est choisi par l'utilisateur pour le protocole http
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice"
-        )
-        prog_id, _ = winreg.QueryValueEx(key, "ProgId")
-        winreg.CloseKey(key)
-
-        # 2. Quelle commande correspond à ce ProgId
-        cmd_key = winreg.OpenKey(
-            winreg.HKEY_CLASSES_ROOT, fr"{prog_id}\shell\open\command"
-        )
-        command, _ = winreg.QueryValueEx(cmd_key, "")
-        winreg.CloseKey(cmd_key)
-        return command  # ex: '"C:\...\chrome.exe" --single-argument %1'
-    except Exception as e:
-        log.warning(f"Lecture navigateur par défaut: {e}")
-        return None
-
-def open_url_default(url: str):
-    """Ouvre une URL avec le VRAI navigateur par défaut de Windows. Lit le
-    réglage UserChoice du registre et lance l'exécutable directement plutôt
-    que de passer par une association de protocole générique, qui peut
-    retomber sur Internet Explorer sur certaines installations Windows
-    (association "http" legacy non synchronisée avec le choix utilisateur
-    moderne). Conserve un repli en cascade si la lecture registre échoue."""
-    if not url: return
-    if sys.platform == "win32":
-        cmd = _get_default_browser_command()
-        if cmd:
-            try:
-                if "%1" in cmd:
-                    final_cmd = cmd.replace("%1", url)
-                else:
-                    final_cmd = f'{cmd} "{url}"'
-                run_hidden(final_cmd, shell=True)
-                return
-            except Exception as e:
-                log.error(f"Lancement navigateur via registre: {e}")
-        # Repli : ShellExecute standard (peut, dans de rares cas, retomber
-        # sur une association legacy, mais reste mieux que rien)
-        try:
-            os.startfile(url)
-            return
-        except Exception as e:
-            log.error(f"open_url_default fallback os.startfile('{url}'): {e}")
-    try:
-        webbrowser.open(url)
-    except Exception as e:
-        log.error(f"open_url_default fallback webbrowser('{url}'): {e}")
-
-import psutil
-import keyboard
-import mouse
-import websockets
-from websockets.server import WebSocketServerProtocol
+import psutil, keyboard, mouse
 
 try:
     from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-    from comtypes import CLSCTX_ALL
-    PYCAW_OK = True
+    from comtypes import CLSCTX_ALL; PYCAW_OK = True
 except: PYCAW_OK = False
 
 try:
-    import win32gui, win32process
-    WIN32_OK = True
+    import win32gui, win32process; WIN32_OK = True
 except: WIN32_OK = False
 
-# GPUtil est volontairement RETIRÉ : il lance "nvidia-smi" en interne via
-# subprocess SANS masquer la fenêtre console, ce qui provoquait le
-# clignotement répété (la boucle de métriques tourne chaque seconde).
-# On lit nvidia-smi nous-mêmes avec run_hidden() qui garantit STARTF_USESHOWWINDOW.
-GPU_OK = shutil.which("nvidia-smi") is not None
-
 try:
-    import wmi as wmilib
-    WMI_OK = True
+    import wmi as wmilib; WMI_OK = True
 except: WMI_OK = False
 
 try:
-    import serial, serial.tools.list_ports
-    SERIAL_OK = True
+    import serial, serial.tools.list_ports; SERIAL_OK = True
 except: SERIAL_OK = False
 
+GPU_OK = shutil.which("nvidia-smi") is not None
 logging.basicConfig(level=logging.WARNING)
-log = logging.getLogger("MD")
+log = logging.getLogger("IMP")
 
-WS_PORT   = 8765
-HTTP_PORT = 8766
 CONFIG_PATH = Path(os.path.expanduser("~")) / ".macrodeck" / "config.json"
 CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# ── VOLUME ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# THÈME
+# ══════════════════════════════════════════════════════════════════════════════
+TH = {
+    "bg":      "#0d0e12",
+    "bg1":     "#11131a",
+    "bg2":     "#161820",
+    "bg3":     "#181b22",
+    "bg4":     "#1e212b",
+    "card":    "#1c1f29",
+    "border":  "#2a2d3a",
+    "border2": "#23263200",
+    "accent":  "#6366f1",
+    "accent2": "#818cf8",
+    "text":    "#f1f5f9",
+    "text2":   "#cbd5e1",
+    "text3":   "#94a3b8",
+    "text4":   "#64748b",
+    "green":   "#22c55e",
+    "red":     "#ef4444",
+    "yellow":  "#f59e0b",
+}
+
+def th(k): return TH[k]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUDIO
+# ══════════════════════════════════════════════════════════════════════════════
 def _vif():
     if not PYCAW_OK: return None
     try:
         d = AudioUtilities.GetSpeakers()
-        i = d.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        return i.QueryInterface(IAudioEndpointVolume)
+        return d.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
     except: return None
 
 def get_volume():
@@ -168,491 +110,600 @@ def set_mute(s):
     try: v=_vif(); v and v.SetMute(s, None)
     except: pass
 
-def set_app_volume(process_name: str, level: int):
-    """Règle le volume d'une application précise via ses sessions audio (pycaw)."""
-    if not PYCAW_OK or not process_name: return
+def set_app_volume(name, level):
+    if not PYCAW_OK or not name: return
     try:
         from pycaw.pycaw import ISimpleAudioVolume
-        target = process_name.lower().replace(".exe","")
-        for session in AudioUtilities.GetAllSessions():
-            if session.Process and session.Process.name().lower().replace(".exe","") == target:
-                vol = session._ctl.QueryInterface(ISimpleAudioVolume)
-                vol.SetMasterVolume(max(0,min(100,level))/100.0, None)
-    except Exception as e:
-        log.error(f"set_app_volume: {e}")
-
-def get_app_volume(process_name: str):
-    if not PYCAW_OK or not process_name: return None
-    try:
-        from pycaw.pycaw import ISimpleAudioVolume
-        target = process_name.lower().replace(".exe","")
-        for session in AudioUtilities.GetAllSessions():
-            if session.Process and session.Process.name().lower().replace(".exe","") == target:
-                vol = session._ctl.QueryInterface(ISimpleAudioVolume)
-                return round(vol.GetMasterVolume()*100)
+        t = name.lower().replace(".exe","")
+        for s in AudioUtilities.GetAllSessions():
+            if s.Process and s.Process.name().lower().replace(".exe","") == t:
+                s._ctl.QueryInterface(ISimpleAudioVolume).SetMasterVolume(max(0,min(100,level))/100.0, None)
     except: pass
-    return None
 
 def list_audio_sessions():
-    """Liste les applications qui ont actuellement une session audio active (pour le picker)."""
-    out = []
+    out, seen = [], set()
     if not PYCAW_OK: return out
     try:
-        seen = set()
-        for session in AudioUtilities.GetAllSessions():
-            if session.Process:
-                name = session.Process.name()
-                if name.lower() not in seen:
-                    seen.add(name.lower())
-                    out.append(name)
+        for s in AudioUtilities.GetAllSessions():
+            if s.Process:
+                n = s.Process.name()
+                if n.lower() not in seen: seen.add(n.lower()); out.append(n)
     except: pass
     return sorted(out)
 
-# ── APPS ─────────────────────────────────────────────────────────────────────
-def get_installed_apps():
-    apps=[]; seen=set()
-    def add(name, path, kind):
+def open_url(url):
+    if not url: return
+    if sys.platform == "win32":
         try:
-            k=name.lower().strip()
-            if k and k not in seen:
-                seen.add(k); apps.append({"name":name,"path":path,"type":kind})
+            import winreg
+            k=winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice")
+            pid,_=winreg.QueryValueEx(k,"ProgId"); winreg.CloseKey(k)
+            ck=winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, fr"{pid}\shell\open\command")
+            cmd,_=winreg.QueryValueEx(ck,""); winreg.CloseKey(ck)
+            run_hidden(cmd.replace("%1",url) if "%1" in cmd else f'{cmd} "{url}"', shell=True)
+            return
         except: pass
+        try: os.startfile(url); return
+        except: pass
+    webbrowser.open(url)
 
-    # Menu Démarrer (.lnk) — protégé : un dossier verrouillé ou un raccourci
-    # corrompu ne doit jamais faire planter tout le scan.
-    try:
-        for base in [
-            os.path.join(os.environ.get("APPDATA",""),"Microsoft","Windows","Start Menu","Programs"),
-            r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"]:
-            try:
-                if os.path.isdir(base):
-                    for r,_,files in os.walk(base):
-                        for f in files:
-                            if f.endswith(".lnk"): add(f[:-4], os.path.join(r,f), "lnk")
-            except Exception as e:
-                log.warning(f"get_installed_apps menu démarrer '{base}': {e}")
-    except Exception as e:
-        log.error(f"get_installed_apps menu démarrer: {e}")
-
-    # Registre Windows (apps installées avec DisplayName/DisplayIcon)
-    try:
-        import winreg
-        for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
-            for p in [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                      r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"]:
-                try:
-                    key=winreg.OpenKey(hive,p); i=0
-                    while True:
-                        try:
-                            sub=winreg.OpenKey(key,winreg.EnumKey(key,i))
-                            try:
-                                n=winreg.QueryValueEx(sub,"DisplayName")[0]
-                                e=winreg.QueryValueEx(sub,"DisplayIcon")[0].split(",")[0].strip('"')
-                                if e.endswith(".exe") and os.path.isfile(e): add(n,e,"exe")
-                            except: pass
-                            i+=1
-                        except OSError: break
-                except: pass
-    except Exception as e:
-        log.warning(f"get_installed_apps registre: {e}")
-
-    # Program Files / dossiers locaux — protégé individuellement par dossier,
-    # un sous-dossier inaccessible (permissions) ne bloque pas les suivants.
-    for base in [r"C:\Program Files",r"C:\Program Files (x86)",
-                 os.path.join(os.environ.get("LOCALAPPDATA",""),"Programs")]:
-        try:
-            if os.path.isdir(base):
-                for d in os.listdir(base):
-                    try:
-                        full=os.path.join(base,d)
-                        if os.path.isdir(full):
-                            for f in os.listdir(full):
-                                if f.endswith(".exe"): add(f[:-4],os.path.join(full,f),"exe")
-                    except Exception as e:
-                        log.warning(f"get_installed_apps '{d}': {e}")
-        except Exception as e:
-            log.warning(f"get_installed_apps base '{base}': {e}")
-
-    apps.sort(key=lambda x:x["name"].lower())
-    return apps
-
-# ── CONFIG ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# CONFIG
+# ══════════════════════════════════════════════════════════════════════════════
 def empty_profile(name):
     return {
-        "name": name,
-        "app_trigger": "",
-        "buttons": {str(i):{"icon":"⭐","label":"Bouton "+str(i+1),"press":[],"long_press":[],"double_click":[]} for i in range(8)},
+        "name": name, "app_trigger": "",
+        "buttons": {str(i):{"icon":"⭐","label":f"Bouton {i+1}","press":[],"long_press":[],"double_click":[]} for i in range(8)},
         "pots": {str(i):{"name":["Volume","App Vol","Luminosité","Custom"][i],"action":["volume_system","volume_app","brightness","custom"][i]} for i in range(4)}
     }
 
 DEFAULT_CONFIG = {
-    "profiles": {
-        "default": empty_profile("Global"),
-        "obs": empty_profile("OBS"),
-        "discord": empty_profile("Discord"),
-    },
+    "profiles": {"default":empty_profile("Global"),"obs":empty_profile("OBS"),"discord":empty_profile("Discord")},
     "active_profile": "default",
     "led_strips": {str(i):{"metric":["cpu","ram","gpu_usage","ssd_usage"][i]} for i in range(4)},
-    "serial_port": "AUTO",
-    "theme": "dark",
-    # ── PROTOCOLE ESP32 ──────────────────────────────────────────────────────
-    # Patrons texte définissant le format des trames série échangées avec
-    # l'ESP32. {i} = index du bouton/potard (0-7 ou 0-3), {v} = valeur (0-100).
-    # Le format par défaut reste le JSON historique pour ne rien casser, mais
-    # tout est personnalisable depuis les Paramètres sans toucher au code.
-    "protocol": {
-        "in_press":        "btn{i}:on",
-        "in_long_press":   "",
-        "in_double_click": "",
-        "in_release":      "btn{i}:off",
-        "in_pot":          "pot{i}:{v}",
-        "out_led":         "led{i}:{v}",
-    },
-    "serial_port2": "",
-    "baud_rate": 115200,
-    "baud_rate2": 115200
+    "serial_port": "AUTO", "theme": "dark",
+    "protocol": {"in_press":"btn{i}:on","in_long_press":"","in_double_click":"","in_release":"btn{i}:off","in_pot":"pot{i}:{v}","out_led":"led{i}:{v}"},
+    "serial_port2":"","baud_rate":115200,"baud_rate2":115200,
+    "overlay":{"cell_size":56,"delay":3,"position":"br","alpha":97}
 }
 
-def pattern_to_regex(pattern: str) -> "re.Pattern":
-    """Convertit un patron du type 'BTN{i}:PRESS' en regex capturant {i} et {v}
-    comme groupes nommés, pour parser les trames brutes reçues de l'ESP32
-    quel que soit le format texte choisi par l'utilisateur (pas que du JSON)."""
-    # Échappe tout le texte du patron sauf nos placeholders, qu'on remplace
-    # ensuite par des groupes de capture numériques.
-    escaped = re.escape(pattern)
-    escaped = escaped.replace(re.escape("{i}"), r"(?P<i>-?\d+)")
-    escaped = escaped.replace(re.escape("{v}"), r"(?P<v>-?\d+)")
-    return re.compile("^"+escaped+"$")
+def pattern_to_regex(p):
+    e=re.escape(p)
+    e=e.replace(re.escape("{i}"),r"(?P<i>-?\d+)")
+    e=e.replace(re.escape("{v}"),r"(?P<v>-?\d+)")
+    return re.compile("^"+e+"$")
 
-def pattern_format(pattern: str, i=None, v=None) -> str:
-    """Remplace {i} et {v} dans un patron de trame sortante (LED) par leurs
-    valeurs réelles, pour générer la ligne exacte à envoyer à l'ESP32."""
-    out = pattern
-    if i is not None: out = out.replace("{i}", str(i))
-    if v is not None: out = out.replace("{v}", str(v))
-    return out
+def pattern_format(p,i=None,v=None):
+    o=p
+    if i is not None: o=o.replace("{i}",str(i))
+    if v is not None: o=o.replace("{v}",str(v))
+    return o
 
 class ConfigManager:
     def __init__(self):
-        self.data = DEFAULT_CONFIG.copy()
+        self.data = json.loads(json.dumps(DEFAULT_CONFIG))
         self.load()
 
     def load(self):
         if CONFIG_PATH.exists():
             try:
-                with open(CONFIG_PATH,"r",encoding="utf-8") as f:
-                    saved = json.load(f)
-                    # Merge profond pour pas écraser les nouvelles clés
-                    self.data.update(saved)
+                saved = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+                self._deep_merge(self.data, saved)
             except: pass
 
+    def _deep_merge(self, base, override):
+        for k,v in override.items():
+            if k in base and isinstance(base[k],dict) and isinstance(v,dict):
+                self._deep_merge(base[k],v)
+            else:
+                base[k]=v
+
     def save(self):
-        with open(CONFIG_PATH,"w",encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2, ensure_ascii=False)
+        CONFIG_PATH.write_text(json.dumps(self.data,indent=2,ensure_ascii=False),encoding="utf-8")
 
     def active(self):
-        name = self.data.get("active_profile","default")
-        return self.data["profiles"].get(name, list(self.data["profiles"].values())[0])
+        n=self.data.get("active_profile","default")
+        return self.data["profiles"].get(n, list(self.data["profiles"].values())[0])
 
-# ── MOTEUR D'ACTIONS ─────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# MÉTRIQUES
+# ══════════════════════════════════════════════════════════════════════════════
+class Metrics:
+    def __init__(self):
+        self._net_prev=psutil.net_io_counters(); self._net_t=time.time()
+        self._ohm=None; self._twmi=None
+        if WMI_OK:
+            try: self._ohm=wmilib.WMI(namespace="root\\OpenHardwareMonitor")
+            except: pass
+            try: self._twmi=wmilib.WMI(namespace="root\\wmi")
+            except: pass
+
+    def _nvidia(self):
+        try:
+            p=run_hidden(["nvidia-smi","--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name",
+                "--format=csv,noheader,nounits"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            out,_=p.communicate(timeout=2)
+            u,mu,mt,t,n=[x.strip() for x in out.strip().split("\n")[0].split(",")]
+            return {"usage":float(u),"vram":round(float(mu)/float(mt)*100,1) if float(mt) else 0,"temp":float(t),"name":n}
+        except: return None
+
+    def collect(self):
+        m={}
+        m["cpu"]=psutil.cpu_percent(interval=None)
+        m["cpu_cores"]=psutil.cpu_count(logical=True)
+        f=psutil.cpu_freq(); m["cpu_freq"]=round(f.current,0) if f else 0
+        m["cpu_temp"]=self._temp("Temperature","CPU")
+        ram=psutil.virtual_memory()
+        m["ram"]=ram.percent; m["ram_used_gb"]=round(ram.used/1e9,1); m["ram_total_gb"]=round(ram.total/1e9,1)
+        m["gpu_usage"]=0; m["gpu_vram"]=0; m["gpu_temp"]=None; m["gpu_name"]=""
+        if GPU_OK:
+            g=self._nvidia()
+            if g: m["gpu_usage"]=g["usage"]; m["gpu_vram"]=g["vram"]; m["gpu_temp"]=g["temp"]; m["gpu_name"]=g["name"]
+        m["ssd_usage"]=0
+        try: m["ssd_usage"]=psutil.disk_usage("C:\\").percent
+        except:
+            try: m["ssd_usage"]=psutil.disk_usage("/").percent
+            except: pass
+        now=time.time(); net=psutil.net_io_counters(); dt=now-self._net_t
+        m["net_up"]=round((net.bytes_sent-self._net_prev.bytes_sent)/dt/1024,1) if dt>0 else 0
+        m["net_down"]=round((net.bytes_recv-self._net_prev.bytes_recv)/dt/1024,1) if dt>0 else 0
+        self._net_prev=net; self._net_t=now
+        m["uptime"]=str(datetime.timedelta(seconds=int(time.time()-psutil.boot_time())))
+        m["volume"]=get_volume(); m["muted"]=get_mute()
+        n=datetime.datetime.now(); m["time"]=n.strftime("%H:%M:%S"); m["date"]=n.strftime("%d/%m/%Y")
+        return m
+
+    def _temp(self,typ,frag):
+        if self._ohm:
+            try:
+                for s in self._ohm.Sensor():
+                    if s.SensorType==typ and frag.lower() in s.Name.lower(): return round(s.Value,1)
+            except: pass
+        if typ=="Temperature" and self._twmi:
+            try:
+                for z in self._twmi.MSAcpi_ThermalZoneTemperature():
+                    k=z.CurrentTemperature
+                    if k and k>0: return round(k/10.0-273.15,1)
+            except: pass
+        return None
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TRANSPORT SÉRIE
+# ══════════════════════════════════════════════════════════════════════════════
+class Transport:
+    LONG_MS=400; DOUBLE_MS=300
+    def __init__(self,on_msg):
+        self._cb=on_msg; self._slots=[None,None]; self._port_names=[None,None]; self._btn_state={}
+
+    def start(self,port="AUTO",baud=115200,slot=0):
+        if not SERIAL_OK: return
+        old=self._slots[slot]
+        if old:
+            try: old.close()
+            except: pass
+            self._slots[slot]=None; self._port_names[slot]=None
+        if port=="AUTO":
+            ports=serial.tools.list_ports.comports()
+            other=self._port_names[1-slot]
+            cands=[p.device for p in ports if any(k in p.description.upper() for k in ["CP210","CH340","USB","FTDI"]) and p.device!=other]
+            if not cands: cands=[p.device for p in ports if p.device!=other]
+            port=cands[0] if cands else None
+        if not port: return
+        try:
+            ser=serial.Serial(port,baud,timeout=0.1)
+            self._slots[slot]=ser; self._port_names[slot]=port
+            threading.Thread(target=self._loop,args=(ser,slot),daemon=True).start()
+        except Exception as e: log.error(f"Serial {slot}: {e}")
+
+    def is_connected(self,slot=0): s=self._slots[slot]; return bool(s and s.is_open)
+
+    def _loop(self,ser,slot):
+        while ser and ser.is_open:
+            try:
+                line=ser.readline().decode("utf-8",errors="ignore").strip()
+                if line: self._cb(line,slot)
+            except: time.sleep(1)
+        if self._slots[slot] is ser: self._slots[slot]=None; self._port_names[slot]=None
+
+    def _handle_timing(self,idx,event,dispatch):
+        now=time.time(); st=self._btn_state.setdefault(idx,{})
+        if event=="on":
+            last=st.get("last_on"); st["on_t"]=now; st["last_on"]=now
+            if last and (now-last)*1000<self.DOUBLE_MS: st["last_on"]=None; dispatch(idx,"double_click")
+        elif event=="off":
+            on_t=st.get("on_t")
+            if on_t is None: return
+            st["on_t"]=None
+            dispatch(idx,"long_press" if (now-on_t)*1000>=self.LONG_MS else "press")
+
+    def send_raw(self,line,slot=0):
+        ser=self._slots[slot]
+        if ser and ser.is_open:
+            try: ser.write((line+"\n").encode())
+            except: pass
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACTIONS
+# ══════════════════════════════════════════════════════════════════════════════
+ALL_ACTIONS = [
+    # Profils
+    {"cat":"Profils","icon":"◈","type":"switch_profile","name":"Changer de profil","params":[{"key":"profile","lbl":"Clé du profil","ph":"obs"}]},
+    {"cat":"Profils","icon":"▶","type":"next_profile","name":"Profil suivant","params":[]},
+    {"cat":"Profils","icon":"◀","type":"prev_profile","name":"Profil précédent","params":[]},
+    # PC
+    {"cat":"PC","icon":"🚀","type":"open_app","name":"Lancer une appli","params":[{"key":"path","lbl":"Chemin / nom","ph":"notepad.exe"}]},
+    {"cat":"PC","icon":"✕","type":"close_app","name":"Fermer une appli","params":[{"key":"name","lbl":"Nom du process","ph":"notepad"}]},
+    {"cat":"PC","icon":"📁","type":"open_folder","name":"Ouvrir dossier","params":[{"key":"path","lbl":"Chemin","ph":"C:\\"}]},
+    {"cat":"PC","icon":"📄","type":"open_file","name":"Ouvrir fichier","params":[{"key":"path","lbl":"Chemin","ph":"C:\\file.pdf"}]},
+    {"cat":"PC","icon":"🔒","type":"lock_session","name":"Verrouiller","params":[]},
+    {"cat":"PC","icon":"⭕","type":"shutdown","name":"Éteindre le PC","params":[]},
+    {"cat":"PC","icon":"🔄","type":"restart","name":"Redémarrer","params":[]},
+    {"cat":"PC","icon":"💤","type":"sleep","name":"Veille","params":[]},
+    {"cat":"PC","icon":"🧹","type":"clean_temp","name":"Nettoyer temp","params":[]},
+    {"cat":"PC","icon":"📷","type":"screenshot","name":"Capture d'écran","params":[]},
+    {"cat":"PC","icon":"🗕","type":"win_minimize_all","name":"Réduire tout","params":[]},
+    {"cat":"PC","icon":"▶","type":"run_command","name":"Commande","params":[{"key":"command","lbl":"Commande","ph":"ipconfig"}]},
+    # Scripts
+    {"cat":"Avancé","icon":"⚡","type":"script_powershell","name":"Script PowerShell","params":[{"key":"code","lbl":"Code PS","ph":"Get-Date","multi":True}]},
+    {"cat":"Avancé","icon":"🐍","type":"script_python","name":"Script Python","params":[{"key":"code","lbl":"Code Python","ph":"print('hello')","multi":True}]},
+    {"cat":"Avancé","icon":"🖥","type":"script_batch","name":"Script Batch","params":[{"key":"code","lbl":"Code .bat","ph":"echo hello","multi":True}]},
+    {"cat":"Avancé","icon":"⏳","type":"delay","name":"Délai","params":[{"key":"ms","lbl":"Millisecondes","ph":"500"}]},
+    {"cat":"Avancé","icon":"🔗","type":"multi_action","name":"Multi-actions","params":[]},
+    # Clavier / souris
+    {"cat":"Clavier","icon":"⌨","type":"hotkey","name":"Raccourci clavier","params":[{"key":"keys","lbl":"Touches","ph":"ctrl+c"}]},
+    {"cat":"Clavier","icon":"✏","type":"type_text","name":"Saisir texte","params":[{"key":"text","lbl":"Texte","ph":"Bonjour !"}]},
+    {"cat":"Clavier","icon":"🔁","type":"key_sequence","name":"Séquence de touches","params":[{"key":"sequence","lbl":"Touches (virgule)","ph":"ctrl+c,ctrl+v"}]},
+    {"cat":"Clavier","icon":"🖱","type":"mouse_click","name":"Clic souris","params":[{"key":"button","lbl":"Bouton","ph":"left"},{"key":"x","lbl":"X (opt)","ph":""},{"key":"y","lbl":"Y (opt)","ph":""}]},
+    {"cat":"Clavier","icon":"🖱","type":"mouse_scroll","name":"Défilement souris","params":[{"key":"delta","lbl":"Delta","ph":"3"}]},
+    # Audio
+    {"cat":"Audio","icon":"🔊","type":"volume_up","name":"Volume +","params":[{"key":"step","lbl":"Pas (%)","ph":"5"}]},
+    {"cat":"Audio","icon":"🔉","type":"volume_down","name":"Volume -","params":[{"key":"step","lbl":"Pas (%)","ph":"5"}]},
+    {"cat":"Audio","icon":"🔈","type":"volume_set","name":"Volume fixe","params":[{"key":"value","lbl":"Valeur (0-100)","ph":"50"}]},
+    {"cat":"Audio","icon":"🔇","type":"mute_toggle","name":"Muet","params":[]},
+    # Médias
+    {"cat":"Médias","icon":"⏯","type":"media_play_pause","name":"Lecture/Pause","params":[]},
+    {"cat":"Médias","icon":"⏭","type":"media_next","name":"Suivant","params":[]},
+    {"cat":"Médias","icon":"⏮","type":"media_prev","name":"Précédent","params":[]},
+    {"cat":"Médias","icon":"⏹","type":"media_stop","name":"Stop","params":[]},
+    {"cat":"Médias","icon":"🌟","type":"brightness","name":"Luminosité","params":[{"key":"value","lbl":"Valeur (0-100)","ph":"75"}]},
+    # OBS
+    {"cat":"OBS","icon":"🎬","type":"obs_scene","name":"Changer scène","params":[{"key":"scene","lbl":"Nom scène","ph":"Gaming"}]},
+    {"cat":"OBS","icon":"📡","type":"obs_stream_start","name":"Démarrer stream","params":[]},
+    {"cat":"OBS","icon":"⏹","type":"obs_stream_stop","name":"Arrêter stream","params":[]},
+    {"cat":"OBS","icon":"⏺","type":"obs_record_start","name":"Démarrer enregistrement","params":[]},
+    {"cat":"OBS","icon":"⏹","type":"obs_record_stop","name":"Arrêter enregistrement","params":[]},
+    {"cat":"OBS","icon":"🎙","type":"obs_mute_toggle","name":"Muet source OBS","params":[{"key":"source","lbl":"Source","ph":"Mic/Aux"}]},
+    # Visio
+    {"cat":"Visio","icon":"🎙","type":"zoom_mute","name":"Zoom : Muet","params":[]},
+    {"cat":"Visio","icon":"📷","type":"zoom_camera","name":"Zoom : Caméra","params":[]},
+    {"cat":"Visio","icon":"✋","type":"zoom_hand","name":"Zoom : Main levée","params":[]},
+    {"cat":"Visio","icon":"🖥","type":"zoom_share","name":"Zoom : Partager","params":[]},
+    {"cat":"Visio","icon":"🚪","type":"zoom_leave","name":"Zoom : Quitter","params":[]},
+    {"cat":"Visio","icon":"🎙","type":"teams_mute","name":"Teams : Muet","params":[]},
+    {"cat":"Visio","icon":"📷","type":"teams_camera","name":"Teams : Caméra","params":[]},
+    {"cat":"Visio","icon":"🎙","type":"discord_mute","name":"Discord : Muet","params":[]},
+    {"cat":"Visio","icon":"🔇","type":"discord_deafen","name":"Discord : Sourd","params":[]},
+    # Dev
+    {"cat":"Dev","icon":"💻","type":"vscode_open","name":"Ouvrir VS Code","params":[{"key":"path","lbl":"Dossier","ph":"."}]},
+    {"cat":"Dev","icon":"⬇","type":"git_pull","name":"Git Pull","params":[{"key":"folder","lbl":"Dossier","ph":"."}]},
+    {"cat":"Dev","icon":"⬆","type":"git_push","name":"Git Push","params":[{"key":"folder","lbl":"Dossier","ph":"."}, {"key":"message","lbl":"Message","ph":"commit"}]},
+    {"cat":"Dev","icon":"🐳","type":"docker_start","name":"Docker Start","params":[{"key":"name","lbl":"Conteneur","ph":"myapp"}]},
+    {"cat":"Dev","icon":"🐳","type":"docker_stop","name":"Docker Stop","params":[{"key":"name","lbl":"Conteneur","ph":"myapp"}]},
+    # Web
+    {"cat":"Web","icon":"🌐","type":"open_url","name":"Ouvrir URL","params":[{"key":"url","lbl":"URL","ph":"https://"}]},
+    {"cat":"Web","icon":"🤖","type":"open_chatgpt","name":"ChatGPT","params":[]},
+    {"cat":"Web","icon":"📧","type":"google_gmail","name":"Gmail","params":[]},
+    {"cat":"Web","icon":"📅","type":"google_calendar","name":"Google Agenda","params":[]},
+    # Temps
+    {"cat":"Temps","icon":"⏱","type":"timer","name":"Minuteur","params":[{"key":"seconds","lbl":"Secondes","ph":"60"},{"key":"label","lbl":"Message","ph":"Terminé !"}]},
+    {"cat":"Temps","icon":"🍅","type":"pomodoro","name":"Pomodoro (25 min)","params":[]},
+    # Réseau
+    {"cat":"Réseau","icon":"📡","type":"ping","name":"Ping","params":[{"key":"host","lbl":"Hôte","ph":"8.8.8.8"}]},
+    {"cat":"Réseau","icon":"🔌","type":"api_call","name":"Appel API","params":[{"key":"url","lbl":"URL","ph":"https://api.example.com"},{"key":"method","lbl":"Méthode","ph":"GET"}]},
+    {"cat":"Réseau","icon":"🪝","type":"webhook","name":"Webhook","params":[{"key":"url","lbl":"URL","ph":"https://"}]},
+    {"cat":"Réseau","icon":"🏠","type":"home_assistant","name":"Home Assistant","params":[{"key":"ha_url","lbl":"URL HA","ph":"http://homeassistant.local:8123"},{"key":"service","lbl":"Service","ph":"light.toggle"},{"key":"entity_id","lbl":"Entité","ph":"light.salon"}]},
+]
+
+POT_ACTIONS = [
+    ("volume_system","🔊 Volume système"),("volume_app","🎵 Volume appli"),
+    ("brightness","🌟 Luminosité"),("scroll","🖱 Défilement"),
+    ("zoom_level","🔍 Zoom"),("media_seek","⏩ Seek média"),
+    ("discord_volume","💬 Discord"),("spotify_volume","🎵 Spotify"),
+    ("game_volume","🎮 Jeu"),("mic_volume","🎙 Micro"),
+    ("obs_volume","🎬 OBS"),("custom","⚙ Custom"),
+]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OVERLAY TKINTER (fenêtre flottante profil)
+# ══════════════════════════════════════════════════════════════════════════════
+class ProfileOverlay:
+    def __init__(self):
+        self._q=None; self._root=None; self._popup=None; self._timer=None
+        self._ready=threading.Event()
+        threading.Thread(target=self._run,daemon=True).start()
+        self._ready.wait(timeout=5)
+
+    def _run(self):
+        try:
+            import queue as _q
+            self._q=_q.Queue()
+            root=tk.Tk(); root.withdraw(); self._root=root; self._ready.set()
+            def poll():
+                try:
+                    while True:
+                        item=self._q.get_nowait()
+                        try: self._show(*item)
+                        except Exception as e: log.warning(f"Overlay: {e}")
+                except: pass
+                root.after(30,poll)
+            root.after(30,poll); root.mainloop()
+        except Exception as e:
+            log.warning(f"Overlay init: {e}"); self._ready.set()
+
+    def _show(self,profile,ov_cfg):
+        root=self._root
+        if not root: return
+        if self._timer:
+            try: root.after_cancel(self._timer)
+            except: pass
+        if self._popup:
+            try: self._popup.destroy()
+            except: pass
+            self._popup=None
+
+        ov=ov_cfg or {}; CELL=max(32,min(100,int(ov.get("cell_size",56))))
+        DELAY=max(1,min(30,int(ov.get("delay",3))))*1000
+        POS=ov.get("position","br"); ALPHA=max(0.2,min(1.0,int(ov.get("alpha",97))/100))
+        ACC="#6366f1"; BG="#0d0e12"; CARD="#1c1f29"; FG="#f1f5f9"; FG3="#94a3b8"
+        BG3="#181b22"; BG4="#1e212b"; BDR="#2a2d3a"; GAP=4; PAD=10; COLS=4
+        W=COLS*CELL+(COLS-1)*GAP+PAD*2
+        H=38+1+8+CELL*2+GAP+8+1+8+CELL+12
+        sw=root.winfo_screenwidth(); sh=root.winfo_screenheight(); mg=20
+        X,Y={"br":(sw-W-mg,sh-H-60),"bl":(mg,sh-H-60),"tr":(sw-W-mg,mg+40)}.get(POS,(mg,mg+40))
+
+        win=tk.Toplevel(root); self._popup=win
+        win.overrideredirect(True); win.attributes("-topmost",True)
+        try: win.attributes("-alpha",ALPHA)
+        except: pass
+        win.configure(bg=ACC); win.geometry(f"{W}x{H}+{X}+{Y}"); win._imgs=[]
+        main=tk.Frame(win,bg=BG); main.pack(padx=1,pady=1,fill="both",expand=True)
+
+        # Header
+        hdr=tk.Frame(main,bg=BG); hdr.pack(fill="x",padx=PAD,pady=(7,4))
+        dot=tk.Canvas(hdr,width=8,height=8,bg=BG,highlightthickness=0); dot.pack(side="left")
+        dot.create_oval(0,0,8,8,fill=ACC,outline="")
+        tk.Label(hdr,text=profile.get("name","Profil"),fg=FG,bg=BG,font=("Segoe UI",10,"bold")).pack(side="left",padx=(6,0))
+        tk.Label(hdr,text="PROFIL",fg=ACC,bg=BG,font=("Segoe UI",7,"bold")).pack(side="right")
+        tk.Frame(main,bg=BDR,height=1).pack(fill="x")
+
+        def _img(data_url,sz):
+            try:
+                import io,base64 as b64; raw=b64.b64decode(data_url[data_url.index(",")+1:])
+                try:
+                    from PIL import Image as PI,ImageTk
+                    return ImageTk.PhotoImage(PI.open(io.BytesIO(raw)).resize((sz,sz),PI.LANCZOS))
+                except ImportError:
+                    img=tk.PhotoImage(data=b64.b64encode(raw).decode())
+                    tw,th=img.width(),img.height()
+                    if tw>sz or th>sz:
+                        f=max(tw//sz,th//sz,1)
+                        if f>1: img=img.subsample(f,f)
+                    return img
+            except: return None
+
+        bf=tk.Frame(main,bg=BG); bf.pack(padx=PAD,pady=(8,0))
+        for i in range(8):
+            b=profile.get("buttons",{}).get(str(i),{}); r,c=divmod(i,COLS)
+            outer=tk.Frame(bf,bg=BDR); outer.grid(row=r,column=c,padx=GAP//2,pady=GAP//2)
+            cell=tk.Frame(outer,bg=CARD,width=CELL-2,height=CELL-2); cell.pack(padx=1,pady=1); cell.pack_propagate(False)
+            lbl=(b.get("label") or f"Btn {i+1}")[:9]; placed=False
+            if b.get("iconImage","").startswith("data:image"):
+                img=_img(b["iconImage"],max(CELL-16,18))
+                if img:
+                    win._imgs.append(img)
+                    tk.Label(cell,image=img,bg=CARD).place(relx=.5,rely=.36,anchor="center")
+                    tk.Label(cell,text=lbl,fg=FG3,bg=CARD,font=("Segoe UI",6)).place(relx=.5,rely=.82,anchor="center")
+                    placed=True
+            if not placed:
+                tk.Label(cell,text=b.get("icon","●"),fg=FG,bg=CARD,font=("Segoe UI Emoji",15)).place(relx=.5,rely=.36,anchor="center")
+                tk.Label(cell,text=lbl,fg=FG3,bg=CARD,font=("Segoe UI",6)).place(relx=.5,rely=.78,anchor="center")
+
+        tk.Frame(main,bg=BDR,height=1).pack(fill="x",padx=PAD,pady=(8,0))
+
+        POT_LBL={"volume_system":"Vol.sys","volume_app":"Vol.app","brightness":"Luminosité","scroll":"Scroll",
+            "zoom_level":"Zoom","media_seek":"Seek","discord_volume":"Discord","spotify_volume":"Spotify",
+            "game_volume":"Jeu","mic_volume":"Micro","obs_volume":"OBS","custom":"Custom"}
+        pf=tk.Frame(main,bg=BG); pf.pack(padx=PAD,pady=(8,12))
+        for i in range(COLS):
+            p=profile.get("pots",{}).get(str(i),{})
+            name=(p.get("name") or f"Pot {i+1}")[:8]
+            action=POT_LBL.get(p.get("action",""),"—")
+            outer=tk.Frame(pf,bg=BDR); outer.grid(row=0,column=i,padx=GAP//2)
+            cell=tk.Frame(outer,bg=BG3,width=CELL-2,height=CELL-2); cell.pack(padx=1,pady=1); cell.pack_propagate(False)
+            img_data=p.get("image","")
+            if img_data and img_data.startswith("data:image"):
+                img=_img(img_data,max(CELL-22,14))
+                if img:
+                    win._imgs.append(img)
+                    tk.Label(cell,image=img,bg=BG3).place(relx=.5,rely=.28,anchor="center")
+                    tk.Label(cell,text=name,fg=FG,bg=BG3,font=("Segoe UI",5,"bold")).place(relx=.5,rely=.80,anchor="center")
+                    continue
+            cv=tk.Canvas(cell,width=26,height=26,bg=BG3,highlightthickness=0); cv.place(relx=.5,rely=.26,anchor="center")
+            cv.create_oval(1,1,25,25,outline=FG3,width=1,fill=BG4)
+            cv.create_oval(5,5,21,21,outline=ACC,width=1.5,fill=BG3)
+            cv.create_oval(10,10,16,16,fill=ACC,outline="")
+            tk.Label(cell,text=name,fg=FG,bg=BG3,font=("Segoe UI",6,"bold")).place(relx=.5,rely=.65,anchor="center")
+            tk.Label(cell,text=action,fg=FG3,bg=BG3,font=("Segoe UI",5)).place(relx=.5,rely=.83,anchor="center")
+
+        win.update_idletasks()
+        self._timer=root.after(DELAY,self._close)
+
+    def _close(self):
+        self._timer=None
+        if self._popup:
+            try: self._popup.destroy()
+            except: pass
+            self._popup=None
+
+    def show(self,profile,ov_cfg):
+        if self._q:
+            try: self._q.put_nowait((profile,ov_cfg))
+            except: pass
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MOTEUR D'ACTIONS
+# ══════════════════════════════════════════════════════════════════════════════
 class ActionEngine:
-    def __init__(self, cfg: ConfigManager, broadcast_fn, plugins=None):
-        self.cfg = cfg
-        self.broadcast = broadcast_fn
-        self.plugins = plugins
+    def __init__(self,cfg,on_profile_change):
+        self.cfg=cfg; self._profile_cb=on_profile_change
 
-    def run(self, actions: list):
+    def run(self,actions):
         for a in actions:
             try: self._one(a)
             except Exception as e: log.error(f"Action {a.get('type')}: {e}")
 
-    def run_pot(self, pot_cfg: dict, val: int):
-        """Applique l'action configurée sur un potard, avec la valeur 0-100 reçue."""
-        action = pot_cfg.get("action","volume_system")
+    def run_pot(self,pot_cfg,val):
+        ac=pot_cfg.get("action","volume_system")
         try:
-            if action == "volume_system":
-                set_volume(val)
-
-            elif action == "volume_app":
-                set_app_volume(pot_cfg.get("app",""), val)
-
-            elif action == "brightness":
+            if   ac=="volume_system":  set_volume(val)
+            elif ac=="volume_app":     set_app_volume(pot_cfg.get("app",""),val)
+            elif ac=="discord_volume": set_app_volume("Discord",val)
+            elif ac=="spotify_volume": set_app_volume("Spotify",val)
+            elif ac=="game_volume":    set_app_volume(pot_cfg.get("app",""),val)
+            elif ac=="mic_volume":     set_app_volume(pot_cfg.get("app","") or "Discord",val)
+            elif ac=="brightness":
                 run_hidden(["powershell","-Command",
                     f"(Get-WmiObject -NS root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{val})"],
-                    creationflags=subprocess.CREATE_NO_WINDOW)
+                    creationflags=CREATE_NO_WINDOW)
+            elif ac in ("scroll","zoom_level","media_seek","playback_speed"):
+                last=pot_cfg.get("_last",50); d=val-last; pot_cfg["_last"]=val
+                if not d: return
+                if   ac=="scroll": mouse.wheel(d/8)
+                elif ac=="zoom_level": keyboard.press("ctrl"); mouse.wheel(d/10); keyboard.release("ctrl")
+                elif ac=="media_seek":
+                    if d>2: keyboard.send("right")
+                    elif d<-2: keyboard.send("left")
+            elif ac=="custom":
+                code=pot_cfg.get("script","")
+                if code: exec(code,{"value":val})
+        except Exception as e: log.error(f"Pot '{ac}': {e}")
 
-            elif action == "obs_volume":
-                # Volume d'une source OBS (0-100 → -100dB..0dB approximatif)
-                self._obs(pot_cfg.get("source","Mic/Aux"), val)
+    def _one(self,a):
+        if isinstance(a.get("params"),dict):
+            m=dict(a); m.update(a["params"]); a=m
+        t=a.get("type","")
 
-            elif action == "scroll":
-                # Défilement proportionnel à l'écart depuis le dernier appel
-                last = pot_cfg.get("_last", 50)
-                delta = val - last
-                pot_cfg["_last"] = val
-                if delta:
-                    mouse.wheel(delta/8)
-
-            elif action == "zoom_level":
-                # Ctrl + molette pour zoomer (navigateur, éditeurs...)
-                last = pot_cfg.get("_last", 50)
-                delta = val - last
-                pot_cfg["_last"] = val
-                if delta:
-                    keyboard.press("ctrl"); mouse.wheel(delta/10); keyboard.release("ctrl")
-
-            elif action == "media_seek":
-                # Avance/recule la lecture média (touches fléchées)
-                last = pot_cfg.get("_last", 50)
-                delta = val - last
-                pot_cfg["_last"] = val
-                if delta > 2: keyboard.send("right")
-                elif delta < -2: keyboard.send("left")
-
-            elif action == "playback_speed":
-                # Vitesse lecture VLC/YouTube ([ et ] sont les raccourcis usuels)
-                last = pot_cfg.get("_last", 50)
-                delta = val - last
-                pot_cfg["_last"] = val
-                if delta > 3: keyboard.send("shift+.")
-                elif delta < -3: keyboard.send("shift+,")
-
-            elif action == "discord_volume":
-                set_app_volume("Discord", val)
-
-            elif action == "spotify_volume":
-                set_app_volume("Spotify", val)
-
-            elif action == "game_volume":
-                set_app_volume(pot_cfg.get("app",""), val)
-
-            elif action == "mic_volume":
-                set_app_volume(pot_cfg.get("app","")or "Discord", val)  # fallback simple
-
-            elif action == "led_strip_color":
-                # Envoie une teinte vers une LED ESP32 (idx fourni via config)
-                strip = pot_cfg.get("strip", 0)
-                self.broadcast({"type":"led_strip_set","strip":strip,"value":val})
-
-            elif action == "custom":
-                code = pot_cfg.get("script","")
-                if code:
-                    exec(code, {"value": val})
-
-            elif self.plugins and action in self.plugins.actions:
-                params = {k:v for k,v in pot_cfg.items() if not k.startswith("_") and k != "action"}
-                self.plugins.run(action, params, value=val)
-
-        except Exception as e:
-            log.error(f"Pot action '{action}': {e}")
-
-    def _obs(self, source, val):
-        try:
-            import websocket as _ws
-            db = round((val/100)*100 - 100, 1)  # 0-100 → -100dB..0dB
-            ws = _ws.create_connection("ws://localhost:4444", timeout=2)
-            ws.send(json.dumps({"request-type":"SetVolume","message-id":"pot","source":source,"volume":db,"useDecibel":True}))
-            ws.close()
-        except: pass
-
-    def _one(self, a: dict):
-        # Le frontend stocke chaque action sous la forme {"type": "...", "params": {...}}.
-        # Tout le dispatch ci-dessous lit ses paramètres directement sur l'objet
-        # (a.get("path"), a.get("url")...), donc on aplatit "params" ici une bonne
-        # fois pour toutes : sans ça, open_url/open_app/open_folder/etc. recevaient
-        # toujours une chaîne vide et semblaient ne "rien faire".
-        if isinstance(a.get("params"), dict):
-            merged = dict(a)
-            merged.update(a["params"])
-            a = merged
-
-        t = a.get("type","")
-
-        # ── PROFILS ─────────────────────────────────────────────────────────
-        if t == "switch_profile":
-            name = a.get("profile","")
-            if name in self.cfg.data["profiles"]:
-                self.cfg.data["active_profile"] = name
-                self.cfg.save()
-                self.broadcast({"type":"profile_changed","profile":name})
-        elif t == "next_profile":
-            keys = list(self.cfg.data["profiles"].keys())
-            cur  = self.cfg.data.get("active_profile","default")
-            idx  = (keys.index(cur)+1) % len(keys) if cur in keys else 0
-            self.cfg.data["active_profile"] = keys[idx]
-            self.cfg.save()
-            self.broadcast({"type":"profile_changed","profile":keys[idx]})
-        elif t == "prev_profile":
-            keys = list(self.cfg.data["profiles"].keys())
-            cur  = self.cfg.data.get("active_profile","default")
-            idx  = (keys.index(cur)-1) % len(keys) if cur in keys else 0
-            self.cfg.data["active_profile"] = keys[idx]
-            self.cfg.save()
-            self.broadcast({"type":"profile_changed","profile":keys[idx]})
-
-        # ── PC ──────────────────────────────────────────────────────────────
-        elif t == "open_app":
-            run_hidden(a.get("path",""), shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "close_app":
+        if t in ("switch_profile","next_profile","prev_profile"):
+            keys=list(self.cfg.data["profiles"].keys())
+            cur=self.cfg.data.get("active_profile","default")
+            if   t=="switch_profile": n=a.get("profile","")
+            elif t=="next_profile": n=keys[(keys.index(cur)+1)%len(keys)] if cur in keys else keys[0]
+            else: n=keys[(keys.index(cur)-1)%len(keys)] if cur in keys else keys[0]
+            if n in self.cfg.data["profiles"]:
+                self.cfg.data["active_profile"]=n; self.cfg.save(); self._profile_cb(n)
+        elif t=="open_app":     run_hidden(a.get("path",""),shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="close_app":
             n=a.get("name","").lower()
             [p.terminate() for p in psutil.process_iter(["name"]) if n in (p.info.get("name") or "").lower()]
-        elif t == "open_folder": os.startfile(a.get("path","."))
-        elif t == "open_file":   os.startfile(a.get("path",""))
-        elif t == "open_url":    open_url_default(a.get("url",""))
-        elif t == "lock_session": keyboard.send("win+l")
-        elif t == "shutdown":    run_silent("shutdown /s /t 0")
-        elif t == "restart":     run_silent("shutdown /r /t 0")
-        elif t == "sleep":       run_silent("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-        elif t == "logoff":      run_silent("shutdown /l")
-        elif t == "run_command":
-            run_hidden(a.get("command",""), shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "script_powershell":
-            run_hidden(["powershell","-Command",a.get("code","")], creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "script_python":
-            exec(a.get("code",""), {})
-        elif t == "script_batch":
-            tmp=os.path.join(os.environ.get("TEMP","."), "md_tmp.bat")
-            open(tmp,"w").write(a.get("code",""))
-            run_hidden(tmp, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "clean_temp":
-            tmp=os.environ.get("TEMP","")
-            for f in glob.glob(os.path.join(tmp,"*")):
-                try:
-                    os.remove(f) if os.path.isfile(f) else shutil.rmtree(f,ignore_errors=True)
+        elif t=="open_folder":  os.startfile(a.get("path","."))
+        elif t=="open_file":    os.startfile(a.get("path",""))
+        elif t=="open_url":     open_url(a.get("url",""))
+        elif t=="lock_session": keyboard.send("win+l")
+        elif t=="shutdown":     run_silent("shutdown /s /t 0")
+        elif t=="restart":      run_silent("shutdown /r /t 0")
+        elif t=="sleep":        run_silent("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+        elif t=="logoff":       run_silent("shutdown /l")
+        elif t=="run_command":  run_hidden(a.get("command",""),shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="script_powershell": run_hidden(["powershell","-Command",a.get("code","")],creationflags=CREATE_NO_WINDOW)
+        elif t=="script_python": exec(a.get("code",""),{})
+        elif t=="script_batch":
+            tmp=os.path.join(os.environ.get("TEMP","."), "imp_tmp.bat")
+            open(tmp,"w").write(a.get("code","")); run_hidden(tmp,shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="clean_temp":
+            for f in glob.glob(os.path.join(os.environ.get("TEMP",""),"*")):
+                try: os.remove(f) if os.path.isfile(f) else shutil.rmtree(f,ignore_errors=True)
                 except: pass
-        elif t == "screenshot":  keyboard.send("win+shift+s")
-        elif t == "win_minimize_all": keyboard.send("win+d")
-
-        # ── CLAVIER / SOURIS ────────────────────────────────────────────────
-        elif t == "hotkey":      keyboard.send(a.get("keys",""))
-        elif t == "type_text":   keyboard.write(a.get("text",""), delay=a.get("delay",0.03))
-        elif t == "key_sequence":
-            for k in (a.get("sequence","")).split(","):
+        elif t=="screenshot":       keyboard.send("win+shift+s")
+        elif t=="win_minimize_all": keyboard.send("win+d")
+        elif t=="hotkey":       keyboard.send(a.get("keys",""))
+        elif t=="type_text":    keyboard.write(a.get("text",""),delay=a.get("delay",0.03))
+        elif t=="key_sequence":
+            for k in a.get("sequence","").split(","):
                 keyboard.send(k.strip()); time.sleep(a.get("interval",0.05))
-        elif t == "mouse_click":
+        elif t=="mouse_click":
             x,y=a.get("x"),a.get("y")
             if x is not None: mouse.move(x,y,absolute=True)
             mouse.click(a.get("button","left"))
-        elif t == "mouse_move":  mouse.move(a.get("x",0),a.get("y",0),absolute=a.get("absolute",True))
-        elif t == "mouse_scroll": mouse.wheel(a.get("delta",1))
-
-        # ── AUDIO ───────────────────────────────────────────────────────────
-        elif t == "volume_up":   set_volume(get_volume()+a.get("step",5))
-        elif t == "volume_down": set_volume(get_volume()-a.get("step",5))
-        elif t == "volume_set":  set_volume(int(a.get("value",50)))
-        elif t == "mute_toggle": set_mute(not get_mute())
-        elif t == "media_play_pause": keyboard.send("play/pause media")
-        elif t == "media_next":  keyboard.send("next track")
-        elif t == "media_prev":  keyboard.send("previous track")
-        elif t == "media_stop":  keyboard.send("stop media")
-        elif t == "brightness":
+        elif t=="mouse_scroll": mouse.wheel(a.get("delta",1))
+        elif t=="volume_up":   set_volume(get_volume()+a.get("step",5))
+        elif t=="volume_down": set_volume(get_volume()-a.get("step",5))
+        elif t=="volume_set":  set_volume(int(a.get("value",50)))
+        elif t=="mute_toggle": set_mute(not get_mute())
+        elif t=="media_play_pause": keyboard.send("play/pause media")
+        elif t=="media_next":  keyboard.send("next track")
+        elif t=="media_prev":  keyboard.send("previous track")
+        elif t=="media_stop":  keyboard.send("stop media")
+        elif t=="brightness":
             run_hidden(["powershell","-Command",
                 f"(Get-WmiObject -NS root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{a.get('value',75)})"],
-                creationflags=subprocess.CREATE_NO_WINDOW)
-
-        # ── OBS ─────────────────────────────────────────────────────────────
-        elif t == "obs_scene":        self._obs("SetCurrentScene",{"scene-name":a.get("scene","")})
-        elif t == "obs_stream_start": self._obs("StartStreaming",{})
-        elif t == "obs_stream_stop":  self._obs("StopStreaming",{})
-        elif t == "obs_record_start": self._obs("StartRecording",{})
-        elif t == "obs_record_stop":  self._obs("StopRecording",{})
-        elif t == "obs_mute_toggle":  self._obs("ToggleMute",{"source":a.get("source","Mic/Aux")})
-
-        # ── VISIO ───────────────────────────────────────────────────────────
-        elif t == "zoom_mute":     keyboard.send("alt+a")
-        elif t == "zoom_camera":   keyboard.send("alt+v")
-        elif t == "zoom_hand":     keyboard.send("alt+y")
-        elif t == "zoom_share":    keyboard.send("alt+s")
-        elif t == "zoom_leave":    keyboard.send("alt+q")
-        elif t == "teams_mute":    keyboard.send("ctrl+shift+m")
-        elif t == "teams_camera":  keyboard.send("ctrl+shift+o")
-        elif t == "teams_share":   keyboard.send("ctrl+shift+e")
-        elif t == "meet_mute":     keyboard.send("ctrl+d")
-        elif t == "meet_camera":   keyboard.send("ctrl+e")
-        elif t == "discord_mute":  keyboard.send("ctrl+shift+m")
-        elif t == "discord_deafen":keyboard.send("ctrl+shift+d")
-
-        # ── DEV ─────────────────────────────────────────────────────────────
-        elif t == "vscode_open":
-            run_hidden(f'code "{a.get("path",".")}"', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "git_pull":
-            run_hidden(f'git -C "{a.get("folder",".")}" pull', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "git_push":
+                creationflags=CREATE_NO_WINDOW)
+        elif t=="obs_scene":        self._obs("SetCurrentScene",{"scene-name":a.get("scene","")})
+        elif t=="obs_stream_start": self._obs("StartStreaming",{})
+        elif t=="obs_stream_stop":  self._obs("StopStreaming",{})
+        elif t=="obs_record_start": self._obs("StartRecording",{})
+        elif t=="obs_record_stop":  self._obs("StopRecording",{})
+        elif t=="obs_mute_toggle":  self._obs("ToggleMute",{"source":a.get("source","Mic/Aux")})
+        elif t=="zoom_mute":     keyboard.send("alt+a")
+        elif t=="zoom_camera":   keyboard.send("alt+v")
+        elif t=="zoom_hand":     keyboard.send("alt+y")
+        elif t=="zoom_share":    keyboard.send("alt+s")
+        elif t=="zoom_leave":    keyboard.send("alt+q")
+        elif t=="teams_mute":    keyboard.send("ctrl+shift+m")
+        elif t=="teams_camera":  keyboard.send("ctrl+shift+o")
+        elif t=="discord_mute":  keyboard.send("ctrl+shift+m")
+        elif t=="discord_deafen":keyboard.send("ctrl+shift+d")
+        elif t=="vscode_open":  run_hidden(f'code "{a.get("path",".")}"',shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="git_pull":     run_hidden(f'git -C "{a.get("folder",".")}" pull',shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="git_push":
             f=a.get("folder","."); m=a.get("message","commit")
-            run_hidden(f'git -C "{f}" add -A && git -C "{f}" commit -m "{m}" && git -C "{f}" push',
-                shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "git_commit":
-            f=a.get("folder","."); m=a.get("message","commit")
-            run_hidden(f'git -C "{f}" add -A && git -C "{f}" commit -m "{m}"',
-                shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "docker_start":
-            run_hidden(f'docker start {a.get("name","")}', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "docker_stop":
-            run_hidden(f'docker stop {a.get("name","")}', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif t == "ssh":
-            subprocess.Popen(f'start cmd /k ssh {a.get("user","")}@{a.get("host","")}', shell=True)
-
-        # ── WEB / IA ────────────────────────────────────────────────────────
-        elif t == "open_chatgpt":    open_url_default(a.get("url","https://chatgpt.com"))
-        elif t == "google_gmail":    open_url_default("https://mail.google.com")
-        elif t == "google_meet":     open_url_default("https://meet.google.com/new")
-        elif t == "google_calendar": open_url_default("https://calendar.google.com")
-
-        # ── TIMER ───────────────────────────────────────────────────────────
-        elif t == "timer":
-            s=int(a.get("seconds",60)); lbl=a.get("label","Timer terminé !")
-            threading.Thread(target=lambda:(_timer(s,lbl)), daemon=True).start()
-        elif t == "pomodoro":
-            threading.Thread(target=lambda:(_timer(25*60,"🍅 Pomodoro terminé !")), daemon=True).start()
-
-        # ── RÉSEAU / AUTO ───────────────────────────────────────────────────
-        elif t == "ping":
-            subprocess.Popen(f'start cmd /k ping -t {a.get("host","8.8.8.8")}', shell=True)
-        elif t == "api_call":
-            threading.Thread(target=self._api, args=(a,), daemon=True).start()
-        elif t == "webhook":
-            threading.Thread(target=self._webhook, args=(a,), daemon=True).start()
-        elif t == "home_assistant":
-            threading.Thread(target=self._ha, args=(a,), daemon=True).start()
-        elif t == "delay":
-            time.sleep(a.get("ms",500)/1000.0)
-        elif t == "multi_action":
+            run_hidden(f'git -C "{f}" add -A && git -C "{f}" commit -m "{m}" && git -C "{f}" push',shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="docker_start": run_hidden(f'docker start {a.get("name","")}',shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t=="docker_stop":  run_hidden(f'docker stop {a.get("name","")}',shell=True,creationflags=CREATE_NO_WINDOW)
+        elif t in ("open_url","open_chatgpt","google_gmail","google_calendar","google_meet"):
+            urls={"open_chatgpt":"https://chatgpt.com","google_gmail":"https://mail.google.com",
+                  "google_calendar":"https://calendar.google.com","google_meet":"https://meet.google.com/new"}
+            open_url(a.get("url","") or urls.get(t,""))
+        elif t=="timer":
+            s=int(a.get("seconds",60)); lbl=a.get("label","Terminé !")
+            threading.Thread(target=lambda:(time.sleep(s),ctypes.windll.user32.MessageBoxW(0,lbl,"Imperium ⏱",0x40|0x1000)),daemon=True).start()
+        elif t=="pomodoro":
+            threading.Thread(target=lambda:(time.sleep(25*60),ctypes.windll.user32.MessageBoxW(0,"🍅 Pomodoro terminé !","Imperium",0x40|0x1000)),daemon=True).start()
+        elif t=="delay": time.sleep(a.get("ms",500)/1000)
+        elif t=="api_call": threading.Thread(target=self._api,args=(a,),daemon=True).start()
+        elif t=="webhook":  threading.Thread(target=self._webhook,args=(a,),daemon=True).start()
+        elif t=="home_assistant": threading.Thread(target=self._ha,args=(a,),daemon=True).start()
+        elif t=="multi_action":
             delay=a.get("delay",0)
-            def _run():
-                for act in a.get("actions",[]):
-                    self._one(act)
-                    if delay: time.sleep(delay/1000.0)
-            threading.Thread(target=_run, daemon=True).start()
+            def _r():
+                for act in a.get("actions",[]): self._one(act); time.sleep(delay/1000) if delay else None
+            threading.Thread(target=_r,daemon=True).start()
 
-        # ── PLUGINS (actions non reconnues ci-dessus) ─────────────────────────
-        elif self.plugins and t in self.plugins.actions:
-            params = {k:v for k,v in a.items() if k != "type"}
-            self.plugins.run(t, params)
-
-        else:
-            log.warning(f"Action inconnue (ni native, ni plugin) : {t}")
-
-    # ── Helpers ─────────────────────────────────────────────────────────────
-    def _obs(self, req, data):
+    def _obs(self,req,data):
         try:
-            import websocket
-            ws=websocket.create_connection("ws://localhost:4444",timeout=3)
-            ws.send(json.dumps({"request-type":req,"message-id":"md",**data}))
-            ws.close()
+            import websocket; ws=websocket.create_connection("ws://localhost:4444",timeout=3)
+            ws.send(json.dumps({"request-type":req,"message-id":"md",**data})); ws.close()
         except: pass
 
-    def _api(self, a):
+    def _api(self,a):
         import urllib.request
-        url=a.get("url",""); method=a.get("method","GET")
-        req=urllib.request.Request(url,method=method)
+        req=urllib.request.Request(a.get("url",""),method=a.get("method","GET"))
         for k,v in a.get("headers",{}).items(): req.add_header(k,v)
-        if a.get("body"):
-            req.data=json.dumps(a["body"]).encode(); req.add_header("Content-Type","application/json")
+        if a.get("body"): req.data=json.dumps(a["body"]).encode(); req.add_header("Content-Type","application/json")
         try:
             with urllib.request.urlopen(req,timeout=10) as r: log.info(f"API {r.status}")
         except Exception as e: log.error(f"API: {e}")
 
-    def _webhook(self, a):
+    def _webhook(self,a):
         import urllib.request
         req=urllib.request.Request(a.get("url",""),data=json.dumps(a.get("payload",{})).encode(),method="POST")
         req.add_header("Content-Type","application/json")
@@ -660,1220 +711,992 @@ class ActionEngine:
             with urllib.request.urlopen(req,timeout=10) as r: log.info(f"Webhook {r.status}")
         except Exception as e: log.error(f"Webhook: {e}")
 
-    def _ha(self, a):
+    def _ha(self,a):
         import urllib.request
         url=f"{a.get('ha_url','http://homeassistant.local:8123')}/api/services/{a.get('service','').replace('.','/')}"
         req=urllib.request.Request(url,data=json.dumps({"entity_id":a.get("entity_id","")}).encode(),method="POST")
-        req.add_header("Authorization",f"Bearer {a.get('token','')}")
-        req.add_header("Content-Type","application/json")
+        req.add_header("Authorization",f"Bearer {a.get('token','')}"); req.add_header("Content-Type","application/json")
         try:
             with urllib.request.urlopen(req,timeout=5) as r: log.info(f"HA {r.status}")
         except Exception as e: log.error(f"HA: {e}")
 
-def _timer(s, lbl):
-    time.sleep(s)
-    try: ctypes.windll.user32.MessageBoxW(0,lbl,"MacroDeck ⏱",0x40|0x1000)
-    except: pass
+# ══════════════════════════════════════════════════════════════════════════════
+# GUI PRINCIPALE — TKINTER
+# ══════════════════════════════════════════════════════════════════════════════
+class ImperiumApp:
+    # ── init ─────────────────────────────────────────────────────────────────
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Imperium")
+        self.root.configure(bg=th("bg"))
+        self.root.geometry("900x640")
+        self.root.minsize(700, 480)
 
-# ── MÉTRIQUES ────────────────────────────────────────────────────────────────
-class Metrics:
-    def __init__(self):
-        self._net_prev=psutil.net_io_counters(); self._net_t=time.time()
-        self._ohm=None
-        self._ohm_tries=0
-        if WMI_OK:
-            try: self._ohm=wmilib.WMI(namespace="root\\OpenHardwareMonitor")
-            except: pass
-        # Fallback: try reading CPU temp via win32 WMI thermal zone
-        self._thermal_wmi=None
-        if WMI_OK:
-            try: self._thermal_wmi=wmilib.WMI(namespace="root\\wmi")
-            except: pass
+        # State
+        self.cfg     = ConfigManager()
+        self.metrics = Metrics()
+        self.overlay = ProfileOverlay()
+        self.engine  = ActionEngine(self.cfg, self._on_profile_changed)
+        self.transport = Transport(self._on_serial)
+        self._metrics_data = {}
+        self._log_lines = []
+        self._active_view = "device"
+        self._btn_frames = {}   # btn index → Frame widget
+        self._pot_frames = {}
+        self._led_frames = {}
+        self._selected_btn = None
+        self._selected_pot = None
 
-    def _read_nvidia_smi(self):
-        """Lit usage/vram/temp/nom GPU via nvidia-smi, fenêtre TOUJOURS cachée."""
-        try:
-            p = run_hidden(
-                ["nvidia-smi",
-                 "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name",
-                 "--format=csv,noheader,nounits"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            out, _ = p.communicate(timeout=2)
-            line = out.strip().split("\n")[0]
-            usage, mem_used, mem_total, temp, name = [x.strip() for x in line.split(",")]
-            vram_pct = round(float(mem_used) / float(mem_total) * 100, 1) if float(mem_total) else 0
-            return {"usage": float(usage), "vram": vram_pct, "temp": float(temp), "name": name}
-        except Exception:
-            return None
+        self._build_ui()
+        self._start_metrics_loop()
+        self.transport.start(self.cfg.data.get("serial_port","AUTO"))
+        self._refresh_device()
 
-    def collect(self):
-        m={}
-        m["cpu"]       = psutil.cpu_percent(interval=None)
-        m["cpu_cores"] = psutil.cpu_count(logical=True)
-        freq=psutil.cpu_freq(); m["cpu_freq"]=round(freq.current,0) if freq else 0
-        m["cpu_temp"]  = self._ohm_val("Temperature","CPU")
+    # ── UI GLOBALE ────────────────────────────────────────────────────────────
+    def _build_ui(self):
+        # Sidebar
+        sb = tk.Frame(self.root, bg=th("bg1"), width=46)
+        sb.pack(side="left", fill="y"); sb.pack_propagate(False)
+        self._sb = sb
 
-        ram=psutil.virtual_memory()
-        m["ram"]         = ram.percent
-        m["ram_used_gb"] = round(ram.used/1e9,1)
-        m["ram_total_gb"]= round(ram.total/1e9,1)
+        # Contenu principal
+        self._content = tk.Frame(self.root, bg=th("bg"))
+        self._content.pack(side="left", fill="both", expand=True)
 
-        m["gpu_usage"]=0; m["gpu_vram"]=0; m["gpu_temp"]=None; m["gpu_name"]=""
-        if GPU_OK:
-            try:
-                gpu = self._read_nvidia_smi()
-                if gpu:
-                    m["gpu_usage"]=gpu["usage"]; m["gpu_vram"]=gpu["vram"]
-                    m["gpu_temp"]=gpu["temp"]; m["gpu_name"]=gpu["name"]
-            except: pass
+        # Topbar
+        top = tk.Frame(self._content, bg=th("bg1"), height=38)
+        top.pack(fill="x"); top.pack_propagate(False)
+        self._lbl_title = tk.Label(top, text="Imperium", fg=th("text"), bg=th("bg1"),
+            font=("Segoe UI", 11, "bold"))
+        self._lbl_title.pack(side="left", padx=14)
+        self._lbl_profile = tk.Label(top, text="", fg=th("accent"), bg=th("bg1"),
+            font=("Segoe UI", 9))
+        self._lbl_profile.pack(side="left", padx=4)
+        self._lbl_time = tk.Label(top, text="", fg=th("text3"), bg=th("bg1"),
+            font=("Segoe UI", 9))
+        self._lbl_time.pack(side="right", padx=12)
 
-        m["ssd_usage"]=0
-        try: m["ssd_usage"]=psutil.disk_usage("C:\\").percent
-        except:
-            try: m["ssd_usage"]=psutil.disk_usage("/").percent
-            except: pass
+        # Views
+        self._views = {}
+        for name in ("device","metrics","profiles","settings","log"):
+            f = tk.Frame(self._content, bg=th("bg"))
+            self._views[name] = f
 
-        disks=[]
-        for p in psutil.disk_partitions(all=False):
-            try:
-                u=psutil.disk_usage(p.mountpoint)
-                disks.append({"device":p.device,"mountpoint":p.mountpoint,
-                    "total_gb":round(u.total/1e9,1),"used_gb":round(u.used/1e9,1),"percent":u.percent})
-            except: pass
-        m["disks"]=disks
+        self._build_sidebar()
+        self._build_device()
+        self._build_metrics()
+        self._build_profiles()
+        self._build_settings()
+        self._build_log()
+        self._switch_view("device")
+        self._update_profile_label()
 
-        now=time.time(); net=psutil.net_io_counters(); dt=now-self._net_t
-        m["net_up"]=round((net.bytes_sent-self._net_prev.bytes_sent)/dt/1024,1) if dt>0 else 0
-        m["net_down"]=round((net.bytes_recv-self._net_prev.bytes_recv)/dt/1024,1) if dt>0 else 0
-        self._net_prev=net; self._net_t=now
+    def _build_sidebar(self):
+        TABS = [("🎛","device","Device"),("📊","metrics","Métriques"),
+                ("◈","profiles","Profils"),("⚙","settings","Paramètres"),("📋","log","Journal")]
+        self._sb_btns = {}
+        tk.Frame(self._sb, bg=th("bg1"), height=8).pack()
+        for icon, name, tip in TABS:
+            btn = tk.Label(self._sb, text=icon, bg=th("bg1"), fg=th("text3"),
+                font=("Segoe UI Emoji", 15), cursor="hand2", width=2, pady=6)
+            btn.pack()
+            btn.bind("<Button-1>", lambda e, n=name: self._switch_view(n))
+            btn.bind("<Enter>", lambda e, b=btn: b.configure(fg=th("text")))
+            btn.bind("<Leave>", lambda e, b=btn, n=name: b.configure(fg=th("accent") if self._active_view==n else th("text3")))
+            self._sb_btns[name] = btn
+        tk.Frame(self._sb, bg=th("border"), height=1).pack(fill="x", padx=6, pady=6)
 
-        m["uptime"]=str(datetime.timedelta(seconds=int(time.time()-psutil.boot_time())))
-        m["volume"]=get_volume(); m["muted"]=get_mute()
-        n=datetime.datetime.now(); m["time"]=n.strftime("%H:%M:%S"); m["date"]=n.strftime("%d/%m/%Y")
+    def _switch_view(self, name):
+        for n, f in self._views.items(): f.pack_forget()
+        self._views[name].pack(fill="both", expand=True, padx=0, pady=0)
+        self._active_view = name
+        for n, b in self._sb_btns.items():
+            b.configure(fg=th("accent") if n==name else th("text3"))
+        if name == "metrics": self._refresh_metrics_ui()
+        if name == "profiles": self._refresh_profiles()
+        if name == "device": self._refresh_device()
 
-        procs=[]
-        for p in sorted(psutil.process_iter(["name","cpu_percent","memory_percent"]),
-                        key=lambda x:(x.info.get("cpu_percent") or 0),reverse=True)[:8]:
-            try: procs.append({"name":p.info["name"],"cpu":round(p.info.get("cpu_percent") or 0,1),"mem":round(p.info.get("memory_percent") or 0,1)})
-            except: pass
-        m["top_processes"]=procs
-        return m
+    # ── DEVICE VIEW ──────────────────────────────────────────────────────────
+    def _build_device(self):
+        f = self._views["device"]
+        top = tk.Frame(f, bg=th("bg")); top.pack(fill="x", padx=14, pady=(10,0))
+        tk.Label(top, text="Device", fg=th("text"), bg=th("bg"), font=("Segoe UI",12,"bold")).pack(side="left")
+        self._serial_dot = tk.Canvas(top, width=10, height=10, bg=th("bg"), highlightthickness=0)
+        self._serial_dot.pack(side="right", padx=(0,4))
+        self._serial_lbl = tk.Label(top, text="Déconnecté", fg=th("text3"), bg=th("bg"), font=("Segoe UI",9))
+        self._serial_lbl.pack(side="right")
 
-    def _ohm_val(self, typ, frag):
-        """Lit une valeur depuis OpenHardwareMonitor (WMI) si dispo,
-        sinon tente la lecture via MSAcpi_ThermalZoneTemperature (natif Windows)."""
-        # 1. OpenHardwareMonitor (le plus précis, nécessite OHM en cours d'exec)
-        if self._ohm:
-            try:
-                for s in self._ohm.Sensor():
-                    if s.SensorType==typ and frag.lower() in s.Name.lower():
-                        return round(s.Value,1)
-            except: pass
+        # Scroll
+        canvas = tk.Canvas(f, bg=th("bg"), highlightthickness=0)
+        canvas.pack(fill="both", expand=True, padx=0, pady=0)
+        inner = tk.Frame(canvas, bg=th("bg"))
+        canvas.create_window((0,0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        self._device_inner = inner
 
-        # 2. Fallback natif Windows : MSAcpi_ThermalZoneTemperature
-        #    Ne nécessite aucun outil externe — lecture directe du BIOS ACPI.
-        #    Disponible sur la plupart des PC (surtout laptops), souvent absent
-        #    sur les desktops sans capteurs ACPI complets. Retourne None dans ce cas.
-        if typ == "Temperature" and self._thermal_wmi:
-            try:
-                for zone in self._thermal_wmi.MSAcpi_ThermalZoneTemperature():
-                    # ACPI renvoie la temp en dixièmes de Kelvin
-                    k = zone.CurrentTemperature
-                    if k and k > 0:
-                        return round(k / 10.0 - 273.15, 1)
-            except: pass
+    def _refresh_device(self):
+        f = self._device_inner
+        for w in f.winfo_children(): w.destroy()
+        self._btn_frames.clear(); self._pot_frames.clear(); self._led_frames.clear()
 
-        # 3. Fallback nvidia-smi pour GPU (déjà géré dans _read_nvidia_smi)
-        return None
-
-# ── OVERLAY SYSTÈME (mini-streamdeck au changement de profil) ────────────────
-# Une popup DOM dans le navigateur ne peut jamais s'afficher au-dessus
-# d'autres applications Windows (jeu en plein écran, Discord, etc.). On utilise
-# donc une vraie fenêtre native Tkinter, sans bordure, toujours au premier
-# plan, qui tourne dans son propre thread avec sa propre boucle d'événements
-# (Tk doit avoir sa boucle dédiée, on ne peut pas la mélanger avec asyncio).
-class ProfileOverlayWindow:
-    def __init__(self):
-        self._queue = None
-        self._root = None
-        self._popup = None
-        self._close_timer = None
-        self._ready = threading.Event()
-        threading.Thread(target=self._run, daemon=True).start()
-        self._ready.wait(timeout=5)
-
-    def _run(self):
-        try:
-            import tkinter as tk
-            import queue as _queue
-        except Exception as e:
-            log.warning(f"Tkinter indisponible, overlay système désactivé: {e}")
-            self._ready.set()
-            return
-
-        self._queue = _queue.Queue()
-        try:
-            root = tk.Tk()
-            root.withdraw()  # pas de fenêtre principale visible, juste le moteur Tk
-        except Exception as e:
-            log.warning(f"Impossible d'initialiser Tkinter, overlay système désactivé: {e}")
-            self._queue = None
-            self._ready.set()
-            return
-        self._root = root
-        self._ready.set()
-
-        def poll():
-            try:
-                while True:
-                    item = self._queue.get_nowait()
-                    profile, ov_cfg = item if isinstance(item, tuple) else (item, {})
-                    try:
-                        self._show(profile, ov_cfg)
-                    except Exception as e:
-                        log.warning(f"Overlay _show: {e}")
-            except _queue.Empty:
-                pass
-            root.after(30, poll)  # 30ms pour latence quasi-nulle
-
-        root.after(30, poll)
-        root.mainloop()
-
-    def _show(self, profile: dict, ov_cfg: dict = None):
-        import tkinter as tk
-        root = self._root
-        if not root: return
-
-        if getattr(self, "_close_timer", None):
-            try: root.after_cancel(self._close_timer)
-            except: pass
-            self._close_timer = None
-        if getattr(self, "_popup", None):
-            try: self._popup.destroy()
-            except: pass
-            self._popup = None
-
-        ov       = ov_cfg or {}
-        CELL     = max(32, min(100, int(ov.get("cell_size", 56))))
-        DELAY    = max(1,  min(30,  int(ov.get("delay", 3)))) * 1000
-        POSITION = ov.get("position", "br")
-        ALPHA    = max(0.2, min(1.0, int(ov.get("alpha", 97)) / 100))
-        OV_POTS  = ov.get("pots", {})
-
-        BG  = "#0d0e12"; CARD = "#1c1f29"; ACC = "#6366f1"
-        FG  = "#f1f5f9"; FG3  = "#94a3b8"; BG3 = "#181b22"
-        BG4 = "#1e212b"; BDR  = "#2a2d3a"
-        PAD=10; GAP=4; COLS=4
-        W = COLS*CELL + (COLS-1)*GAP + PAD*2
-        H = 38 + 1 + 8 + CELL*2 + GAP + 8 + 1 + 8 + CELL + 12
-
-        sw = root.winfo_screenwidth(); sh = root.winfo_screenheight()
-        mg = 20
-        if   POSITION=="br": X=sw-W-mg; Y=sh-H-60
-        elif POSITION=="bl": X=mg;       Y=sh-H-60
-        elif POSITION=="tr": X=sw-W-mg; Y=mg+40
-        else:                 X=mg;       Y=mg+40
-
-        win = tk.Toplevel(root)
-        self._popup = win
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
-        try: win.attributes("-alpha", ALPHA)
-        except: pass
-        win.configure(bg=ACC)
-        win.geometry(f"{W}x{H}+{X}+{Y}")
-        # Force immediate display before building widgets — window appears instantly
-        win.update_idletasks()
-
-        main = tk.Frame(win, bg=BG)
-        main.pack(padx=1, pady=1, fill="both", expand=True)
-        win._imgs = []  # Evite le GC des PhotoImage
-
-        # ── Header ────────────────────────────────────────────────────────
-        hdr = tk.Frame(main, bg=BG)
-        hdr.pack(fill="x", padx=PAD, pady=(7,4))
-        dot = tk.Canvas(hdr, width=8, height=8, bg=BG, highlightthickness=0)
-        dot.pack(side="left", pady=1)
-        dot.create_oval(0,0,8,8, fill=ACC, outline="")
-        tk.Label(hdr, text=profile.get("name","Profil"), fg=FG, bg=BG,
-                 font=("Segoe UI",10,"bold")).pack(side="left", padx=(6,0))
-        tk.Label(hdr, text="PROFIL", fg=ACC, bg=BG,
-                 font=("Segoe UI",7,"bold")).pack(side="right")
-        tk.Frame(main, bg=BDR, height=1).pack(fill="x")
-
-        # ── Boutons 4×2 ───────────────────────────────────────────────────
-        bf = tk.Frame(main, bg=BG)
-        bf.pack(padx=PAD, pady=(8,0))
-        buttons = profile.get("buttons", {})
+        # ── Boutons ──
+        tk.Label(f, text="Boutons", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",10,"bold")).pack(anchor="w", padx=14, pady=(12,6))
+        btn_grid = tk.Frame(f, bg=th("bg")); btn_grid.pack(padx=14)
+        profile = self.cfg.active()
         for i in range(8):
-            b   = buttons.get(str(i), {})
-            r,c = divmod(i, COLS)
-            outer = tk.Frame(bf, bg=BDR)
-            outer.grid(row=r, column=c, padx=GAP//2, pady=GAP//2)
-            cell = tk.Frame(outer, bg=CARD, width=CELL-2, height=CELL-2)
-            cell.pack(padx=1, pady=1)
-            cell.pack_propagate(False)
-            label = (b.get("label") or f"Btn {i+1}")[:9]
-            img_data = b.get("iconImage","")
-            placed = False
-            if img_data and img_data.startswith("data:image"):
+            r, c = divmod(i, 4)
+            b = profile["buttons"].get(str(i), {})
+            cell = self._make_btn_card(btn_grid, i, b)
+            cell.grid(row=r, column=c, padx=5, pady=5)
+            self._btn_frames[i] = cell
+
+        # ── Potards ──
+        tk.Label(f, text="Potentiomètres", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",10,"bold")).pack(anchor="w", padx=14, pady=(14,6))
+        pot_row = tk.Frame(f, bg=th("bg")); pot_row.pack(padx=14)
+        for i in range(4):
+            p = profile["pots"].get(str(i), {})
+            cell = self._make_pot_card(pot_row, i, p)
+            cell.pack(side="left", padx=5)
+            self._pot_frames[i] = cell
+
+        # ── LED strips ──
+        tk.Label(f, text="LED Strips", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",10,"bold")).pack(anchor="w", padx=14, pady=(14,6))
+        led_frame = tk.Frame(f, bg=th("bg")); led_frame.pack(padx=14, fill="x")
+        metrics_keys = ["cpu","ram","gpu_usage","ssd_usage"]
+        metrics_lbl  = ["CPU","RAM","GPU","SSD"]
+        strips_cfg = self.cfg.data.get("led_strips",{})
+        for i in range(4):
+            key = strips_cfg.get(str(i),{}).get("metric", metrics_keys[i])
+            val = int(self._metrics_data.get(key,0) or 0)
+            cell = self._make_led_strip(led_frame, i, val, key, metrics_lbl)
+            cell.pack(fill="x", pady=3)
+            self._led_frames[i] = cell
+
+    def _make_btn_card(self, parent, idx, btn_data):
+        frame = tk.Frame(parent, bg=th("card"), width=96, height=86,
+            relief="flat", bd=0, cursor="hand2")
+        frame.pack_propagate(False)
+        # Numéro
+        tk.Label(frame, text=str(idx+1), fg=th("text4"), bg=th("card"),
+            font=("Segoe UI",7)).place(x=5,y=4)
+        # Icône
+        icon = btn_data.get("icon","⭐") or "⭐"
+        lbl_icon = tk.Label(frame, text=icon, fg=th("text"), bg=th("card"),
+            font=("Segoe UI Emoji",20))
+        lbl_icon.place(relx=.5, rely=.38, anchor="center")
+        # Label
+        label = (btn_data.get("label") or f"Bouton {idx+1}")[:12]
+        tk.Label(frame, text=label, fg=th("text3"), bg=th("card"),
+            font=("Segoe UI",7), wraplength=80).place(relx=.5, rely=.78, anchor="center")
+        # Nombre d'actions
+        n_actions = len(btn_data.get("press",[]))
+        if n_actions:
+            tk.Label(frame, text=str(n_actions), fg=th("accent"), bg=th("card"),
+                font=("Segoe UI",7,"bold")).place(x=74,y=4)
+        # Clic → éditeur
+        for w in (frame, lbl_icon):
+            w.bind("<Button-1>", lambda e, i=idx: self._open_btn_editor(i))
+        return frame
+
+    def _make_pot_card(self, parent, idx, pot_data):
+        frame = tk.Frame(parent, bg=th("card"), width=96, height=96, cursor="hand2")
+        frame.pack_propagate(False)
+        r=28; circ=2*3.14159*r
+        cv=tk.Canvas(frame,width=64,height=64,bg=th("card"),highlightthickness=0)
+        cv.place(relx=.5,rely=.4,anchor="center")
+        cv.create_oval(3,3,61,61,fill=th("bg3"),outline=th("border"),width=2)
+        cv.create_oval(10,10,54,54,fill=th("bg"),outline=th("border"),width=1)
+        cv.create_oval(29,29,35,35,fill=th("accent"),outline="")
+        name=(pot_data.get("name") or f"Pot {idx+1}")[:9]
+        tk.Label(frame,text=name,fg=th("text3"),bg=th("card"),font=("Segoe UI",7)).place(relx=.5,rely=.86,anchor="center")
+        frame.bind("<Button-1>", lambda e,i=idx: self._open_pot_editor(i))
+        cv.bind("<Button-1>",    lambda e,i=idx: self._open_pot_editor(i))
+        return frame
+
+    def _make_led_strip(self, parent, idx, val, metric_key, labels):
+        frame = tk.Frame(parent, bg=th("bg4"), height=32)
+        # Couleur selon valeur
+        if val < 33: color = "#22c55e"
+        elif val < 66: color = "#f59e0b"
+        else: color = "#ef4444"
+        bar = tk.Frame(frame, bg=color, height=32)
+        bar.place(x=0,y=0,relwidth=val/100)
+        key_lbl = metric_key.upper().replace("_USAGE","").replace("_","/")
+        tk.Label(frame,text=f"  {key_lbl}",fg=th("text"),bg=th("bg4"),font=("Segoe UI",9,"bold")).place(x=8,rely=.5,anchor="w")
+        tk.Label(frame,text=f"{val}%",fg=th("text2"),bg=th("bg4"),font=("Segoe UI",9)).place(relx=1,x=-10,rely=.5,anchor="e")
+        return frame
+
+    def _flash_btn(self, idx):
+        if idx in self._btn_frames:
+            f = self._btn_frames[idx]
+            orig = th("card")
+            f.configure(bg=th("accent"))
+            self.root.after(120, lambda: f.configure(bg=orig))
+
+    # ── ÉDITEUR BOUTON ────────────────────────────────────────────────────────
+    def _open_btn_editor(self, idx):
+        profile = self.cfg.active()
+        btn = profile["buttons"].get(str(idx), {})
+
+        win = tk.Toplevel(self.root); win.title(f"Bouton {idx+1}"); win.geometry("520x560")
+        win.configure(bg=th("bg")); win.grab_set()
+
+        tk.Label(win, text=f"Bouton {idx+1} — {profile.get('name','')}",
+            fg=th("text"), bg=th("bg"), font=("Segoe UI",11,"bold")).pack(pady=(12,0))
+
+        nb = ttk.Notebook(win); nb.pack(fill="both", expand=True, padx=12, pady=8)
+        style = ttk.Style(); style.theme_use("default")
+        style.configure("TNotebook", background=th("bg"), borderwidth=0)
+        style.configure("TNotebook.Tab", background=th("bg3"), foreground=th("text3"),
+            padding=[10,4], font=("Segoe UI",9))
+        style.map("TNotebook.Tab", background=[("selected",th("card"))], foreground=[("selected",th("text"))])
+
+        for ev_key, ev_label in [("press","Appui"),("long_press","Appui long"),("double_click","Double clic")]:
+            tab = tk.Frame(nb, bg=th("bg")); nb.add(tab, text=ev_label)
+            self._build_action_editor(tab, idx, ev_key, btn.get(ev_key,[]), profile, win)
+
+        # Icône et label
+        info_frame = tk.Frame(nb, bg=th("bg")); nb.add(info_frame, text="Apparence")
+        tk.Label(info_frame, text="Icône (emoji):", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w", padx=12, pady=(12,2))
+        icon_var = tk.StringVar(value=btn.get("icon","⭐"))
+        icon_entry = tk.Entry(info_frame, textvariable=icon_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI Emoji",14), width=6,
+            relief="flat", bd=4)
+        icon_entry.pack(anchor="w", padx=12)
+        tk.Label(info_frame, text="Label:", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w", padx=12, pady=(10,2))
+        lbl_var = tk.StringVar(value=btn.get("label",f"Bouton {idx+1}"))
+        tk.Entry(info_frame, textvariable=lbl_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(anchor="w", padx=12, fill="x")
+
+        def _save():
+            profile["buttons"][str(idx)]["icon"] = icon_var.get()
+            profile["buttons"][str(idx)]["label"] = lbl_var.get()
+            self.cfg.save(); self._refresh_device(); win.destroy()
+
+        tk.Button(win, text="💾 Enregistrer", command=_save, bg=th("accent"), fg="white",
+            font=("Segoe UI",10,"bold"), relief="flat", bd=0, pady=6, cursor="hand2").pack(fill="x", padx=12, pady=8)
+
+    def _build_action_editor(self, tab, btn_idx, ev_key, actions, profile, parent_win):
+        """Liste des actions pour un event (press/long/double), avec ajout/suppression."""
+        lf = tk.Frame(tab, bg=th("bg")); lf.pack(fill="both", expand=True, padx=8, pady=8)
+
+        act_list = tk.Frame(lf, bg=th("bg")); act_list.pack(fill="both", expand=True)
+
+        def refresh_list():
+            for w in act_list.winfo_children(): w.destroy()
+            acts = profile["buttons"][str(btn_idx)].get(ev_key,[])
+            if not acts:
+                tk.Label(act_list, text="Aucune action", fg=th("text4"), bg=th("bg"),
+                    font=("Segoe UI",9,"italic")).pack(pady=20)
+            for j, act in enumerate(acts):
+                row = tk.Frame(act_list, bg=th("card")); row.pack(fill="x", pady=2)
+                info = next((a for a in ALL_ACTIONS if a["type"]==act.get("type")), None)
+                icon = info["icon"] if info else "?"
+                name = info["name"] if info else act.get("type","?")
+                tk.Label(row, text=f"{icon} {name}", fg=th("text"), bg=th("card"),
+                    font=("Segoe UI",9), anchor="w").pack(side="left", padx=8, pady=6, fill="x", expand=True)
+                tk.Button(row, text="✕", fg=th("red"), bg=th("card"), relief="flat", bd=0,
+                    cursor="hand2", font=("Segoe UI",10),
+                    command=lambda j_=j: _remove(j_)).pack(side="right", padx=6)
+
+        def _remove(j):
+            profile["buttons"][str(btn_idx)][ev_key].pop(j)
+            self.cfg.save(); refresh_list()
+
+        def _add_action():
+            self._action_picker(lambda a: _on_picked(a))
+
+        def _on_picked(act_def):
+            # Collecte les params
+            params = {}
+            for p in act_def.get("params",[]):
+                params[p["key"]] = p.get("ph","")
+            action = {"type": act_def["type"]}
+            action.update(params)
+            if ev_key not in profile["buttons"][str(btn_idx)]:
+                profile["buttons"][str(btn_idx)][ev_key] = []
+            profile["buttons"][str(btn_idx)][ev_key].append(action)
+            self.cfg.save(); refresh_list()
+
+        refresh_list()
+        tk.Button(lf, text="+ Ajouter une action", command=_add_action,
+            bg=th("bg3"), fg=th("accent"), font=("Segoe UI",9,"bold"),
+            relief="flat", bd=0, pady=5, cursor="hand2").pack(fill="x", pady=(6,0))
+
+        def _test():
+            acts = profile["buttons"][str(btn_idx)].get(ev_key,[])
+            threading.Thread(target=self.engine.run, args=(acts,), daemon=True).start()
+            self._toast(f"Test : {ev_key}")
+
+        tk.Button(lf, text="▶ Tester", command=_test,
+            bg=th("bg4"), fg=th("text2"), font=("Segoe UI",9),
+            relief="flat", bd=0, pady=4, cursor="hand2").pack(fill="x", pady=(3,0))
+
+    def _action_picker(self, callback):
+        """Fenêtre de sélection d'action par catégorie."""
+        win = tk.Toplevel(self.root); win.title("Choisir une action")
+        win.geometry("480x500"); win.configure(bg=th("bg")); win.grab_set()
+
+        tk.Label(win, text="Choisir une action", fg=th("text"), bg=th("bg"),
+            font=("Segoe UI",11,"bold")).pack(pady=(12,6))
+
+        search_var = tk.StringVar()
+        tk.Entry(win, textvariable=search_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10),
+            relief="flat", bd=6, placeholder_text="Rechercher…").pack(fill="x", padx=12)
+
+        canvas = tk.Canvas(win, bg=th("bg"), highlightthickness=0)
+        sb = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y"); canvas.pack(fill="both", expand=True, padx=12, pady=6)
+        inner = tk.Frame(canvas, bg=th("bg")); canvas.create_window((0,0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        def render(q=""):
+            for w in inner.winfo_children(): w.destroy()
+            cats = {}
+            for a in ALL_ACTIONS:
+                if q and q.lower() not in a["name"].lower() and q.lower() not in a["cat"].lower(): continue
+                cats.setdefault(a["cat"],[]).append(a)
+            for cat, acts in sorted(cats.items()):
+                tk.Label(inner, text=cat, fg=th("accent"), bg=th("bg"),
+                    font=("Segoe UI",9,"bold")).pack(anchor="w", pady=(8,2))
+                for a in acts:
+                    row = tk.Frame(inner, bg=th("card"), cursor="hand2")
+                    row.pack(fill="x", pady=1)
+                    tk.Label(row, text=f"{a['icon']} {a['name']}", fg=th("text"), bg=th("card"),
+                        font=("Segoe UI",9), anchor="w").pack(side="left", padx=8, pady=5)
+                    tk.Label(row, text=a.get("desc",""), fg=th("text3"), bg=th("card"),
+                        font=("Segoe UI",8)).pack(side="left", padx=4)
+                    row.bind("<Button-1>", lambda e, a_=a: (win.destroy(), _open_params(a_)))
+                    for child in row.winfo_children():
+                        child.bind("<Button-1>", lambda e, a_=a: (win.destroy(), _open_params(a_)))
+
+        def _open_params(act_def):
+            if not act_def.get("params"):
+                callback(act_def); return
+            pw = tk.Toplevel(self.root); pw.title(act_def["name"])
+            pw.geometry("360x300"); pw.configure(bg=th("bg")); pw.grab_set()
+            tk.Label(pw, text=f"{act_def['icon']} {act_def['name']}", fg=th("text"), bg=th("bg"),
+                font=("Segoe UI",11,"bold")).pack(pady=(12,8))
+            entries = {}
+            for p in act_def["params"]:
+                tk.Label(pw, text=p["lbl"]+":", fg=th("text2"), bg=th("bg"),
+                    font=("Segoe UI",9)).pack(anchor="w", padx=16)
+                var = tk.StringVar(value=p.get("ph",""))
+                if p.get("multi"):
+                    t = tk.Text(pw, bg=th("bg3"), fg=th("text"), insertbackground=th("text"),
+                        font=("Segoe UI",9), height=5, relief="flat", bd=4)
+                    t.insert("1.0", p.get("ph",""))
+                    t.pack(fill="x", padx=16, pady=(0,6))
+                    entries[p["key"]] = ("text", t)
+                else:
+                    e = tk.Entry(pw, textvariable=var, bg=th("bg3"), fg=th("text"),
+                        insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4)
+                    e.pack(fill="x", padx=16, pady=(0,6))
+                    entries[p["key"]] = ("var", var)
+            def _confirm():
+                built = dict(act_def)
+                built["params"] = []
+                for key,(kind,widget) in entries.items():
+                    val = widget.get("1.0","end-1c") if kind=="text" else widget.get()
+                    built[key] = val
+                    built.setdefault("params",[])
+                pw.destroy(); callback(built)
+            tk.Button(pw, text="✅ Confirmer", command=_confirm, bg=th("accent"), fg="white",
+                font=("Segoe UI",10,"bold"), relief="flat", bd=0, pady=6, cursor="hand2").pack(fill="x", padx=16, pady=8)
+
+        search_var.trace_add("write", lambda *_: render(search_var.get()))
+        render()
+
+    # ── ÉDITEUR POTARD ────────────────────────────────────────────────────────
+    def _open_pot_editor(self, idx):
+        profile = self.cfg.active()
+        pot = profile["pots"].get(str(idx), {})
+        win = tk.Toplevel(self.root); win.title(f"Potard {idx+1}")
+        win.geometry("360x280"); win.configure(bg=th("bg")); win.grab_set()
+
+        tk.Label(win, text=f"Potard {idx+1}", fg=th("text"), bg=th("bg"),
+            font=("Segoe UI",11,"bold")).pack(pady=(12,8))
+
+        tk.Label(win, text="Nom:", fg=th("text2"), bg=th("bg"), font=("Segoe UI",9)).pack(anchor="w",padx=16)
+        name_var = tk.StringVar(value=pot.get("name",f"Pot {idx+1}"))
+        tk.Entry(win, textvariable=name_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(fill="x",padx=16,pady=(0,8))
+
+        tk.Label(win, text="Action:", fg=th("text2"), bg=th("bg"), font=("Segoe UI",9)).pack(anchor="w",padx=16)
+        action_var = tk.StringVar(value=pot.get("action","volume_system"))
+        sel = ttk.Combobox(win, textvariable=action_var, state="readonly",
+            values=[k for k,_ in POT_ACTIONS], font=("Segoe UI",10))
+        sel["values"] = [f"{lbl}" for _,lbl in POT_ACTIONS]
+        # Map display → key
+        pot_map = {lbl:k for k,lbl in POT_ACTIONS}
+        cur_lbl = next((l for k,l in POT_ACTIONS if k==pot.get("action","volume_system")), POT_ACTIONS[0][1])
+        action_var.set(cur_lbl)
+        sel.pack(fill="x",padx=16,pady=(0,8))
+
+        # App (si volume_app)
+        tk.Label(win, text="Appli cible (si vol.app):", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w",padx=16)
+        app_var = tk.StringVar(value=pot.get("app",""))
+        tk.Entry(win, textvariable=app_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(fill="x",padx=16,pady=(0,8))
+
+        def _save():
+            profile["pots"][str(idx)]["name"] = name_var.get()
+            profile["pots"][str(idx)]["action"] = pot_map.get(action_var.get(), "volume_system")
+            profile["pots"][str(idx)]["app"] = app_var.get()
+            self.cfg.save(); self._refresh_device(); win.destroy()
+
+        tk.Button(win, text="💾 Enregistrer", command=_save, bg=th("accent"), fg="white",
+            font=("Segoe UI",10,"bold"), relief="flat", bd=0, pady=6, cursor="hand2").pack(fill="x",padx=16,pady=8)
+
+    # ── MÉTRIQUES ─────────────────────────────────────────────────────────────
+    def _build_metrics(self):
+        f = self._views["metrics"]
+        tk.Label(f, text="Métriques système", fg=th("text"), bg=th("bg"),
+            font=("Segoe UI",12,"bold")).pack(anchor="w", padx=14, pady=(12,8))
+        self._metrics_frame = tk.Frame(f, bg=th("bg")); self._metrics_frame.pack(fill="both", expand=True, padx=14)
+
+    def _refresh_metrics_ui(self):
+        m = self._metrics_data
+        if not m: return
+        f = self._metrics_frame
+        for w in f.winfo_children(): w.destroy()
+
+        def card(label, value, unit="", color=th("text"), sub=""):
+            c = tk.Frame(f, bg=th("card"), width=160, height=80); c.pack_propagate(False)
+            tk.Label(c, text=label, fg=th("text3"), bg=th("card"), font=("Segoe UI",8)).pack(anchor="w",padx=10,pady=(8,0))
+            tk.Label(c, text=f"{value}{unit}", fg=color, bg=th("card"), font=("Segoe UI",18,"bold")).pack(anchor="w",padx=10)
+            if sub: tk.Label(c, text=sub, fg=th("text4"), bg=th("card"), font=("Segoe UI",7)).pack(anchor="w",padx=10)
+            return c
+
+        def color_pct(v):
+            try: v=float(v)
+            except: return th("text")
+            if v<50: return th("green")
+            if v<80: return th("yellow")
+            return th("red")
+
+        grid = tk.Frame(f, bg=th("bg")); grid.pack(fill="x")
+        items = [
+            ("CPU", f"{m.get('cpu',0):.0f}", "%", color_pct(m.get('cpu',0)), f"{m.get('cpu_freq',0):.0f} MHz — {m.get('cpu_cores',0)} cœurs"),
+            ("RAM", f"{m.get('ram',0):.0f}", "%", color_pct(m.get('ram',0)), f"{m.get('ram_used_gb',0)} / {m.get('ram_total_gb',0)} GB"),
+            ("GPU", f"{m.get('gpu_usage',0):.0f}", "%", color_pct(m.get('gpu_usage',0)), m.get('gpu_name','')[:22]),
+            ("VRAM", f"{m.get('gpu_vram',0):.0f}", "%", color_pct(m.get('gpu_vram',0)), ""),
+            ("SSD", f"{m.get('ssd_usage',0):.0f}", "%", color_pct(m.get('ssd_usage',0)), ""),
+            ("↑ Réseau", f"{m.get('net_up',0)}", " KB/s", th("text2"), ""),
+            ("↓ Réseau", f"{m.get('net_down',0)}", " KB/s", th("text2"), ""),
+            ("Volume", f"{m.get('volume',0)}", "%", th("text2"), "🔇" if m.get("muted") else ""),
+        ]
+        for i, (lbl, val, unit, col, sub) in enumerate(items):
+            c = card(lbl, val, unit, col, sub)
+            c.grid(row=i//4, column=i%4, padx=5, pady=5, in_=grid)
+
+        # Top processus
+        tk.Label(f, text="Top processus", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",10,"bold")).pack(anchor="w", pady=(12,4))
+        for p in m.get("top_processes",[]):
+            row = tk.Frame(f, bg=th("card")); row.pack(fill="x", pady=1)
+            tk.Label(row, text=p["name"], fg=th("text"), bg=th("card"), font=("Segoe UI",9), width=24, anchor="w").pack(side="left",padx=8,pady=4)
+            tk.Label(row, text=f"CPU {p['cpu']}%", fg=color_pct(p['cpu']), bg=th("card"), font=("Segoe UI",9)).pack(side="left",padx=4)
+            tk.Label(row, text=f"MEM {p['mem']:.1f}%", fg=th("text3"), bg=th("card"), font=("Segoe UI",9)).pack(side="left",padx=4)
+
+    # ── PROFILS ───────────────────────────────────────────────────────────────
+    def _build_profiles(self):
+        f = self._views["profiles"]
+        top = tk.Frame(f, bg=th("bg")); top.pack(fill="x", padx=14, pady=(12,6))
+        tk.Label(top, text="Profils", fg=th("text"), bg=th("bg"), font=("Segoe UI",12,"bold")).pack(side="left")
+        tk.Button(top, text="+ Nouveau", command=self._new_profile,
+            bg=th("accent"), fg="white", font=("Segoe UI",9,"bold"),
+            relief="flat", bd=0, padx=10, pady=4, cursor="hand2").pack(side="right")
+        self._profiles_frame = tk.Frame(f, bg=th("bg"))
+        self._profiles_frame.pack(fill="both", expand=True, padx=14)
+
+    def _refresh_profiles(self):
+        f = self._profiles_frame
+        for w in f.winfo_children(): w.destroy()
+        active = self.cfg.data.get("active_profile","default")
+        for key, profile in self.cfg.data["profiles"].items():
+            is_active = (key == active)
+            row = tk.Frame(f, bg=th("card") if is_active else th("bg3"))
+            row.pack(fill="x", pady=4)
+            # Indicateur actif
+            dot = tk.Canvas(row, width=8, height=8, bg=row.cget("bg"), highlightthickness=0)
+            dot.pack(side="left", padx=8, pady=14)
+            dot.create_oval(0,0,8,8, fill=th("accent") if is_active else th("border"), outline="")
+            tk.Label(row, text=profile.get("name",key), fg=th("text") if is_active else th("text2"),
+                bg=row.cget("bg"), font=("Segoe UI",10,"bold" if is_active else "normal")).pack(side="left",pady=8)
+            if is_active:
+                tk.Label(row, text="ACTIF", fg=th("accent"), bg=row.cget("bg"),
+                    font=("Segoe UI",7,"bold")).pack(side="left",padx=8)
+            # Boutons
+            if not is_active:
+                tk.Button(row, text="Activer", command=lambda k=key: self._set_profile(k),
+                    bg=th("accent"), fg="white", font=("Segoe UI",8),
+                    relief="flat", bd=0, padx=8, pady=3, cursor="hand2").pack(side="right",padx=4,pady=6)
+            if key != "default":
+                tk.Button(row, text="🗑", fg=th("red"), bg=row.cget("bg"), relief="flat", bd=0,
+                    cursor="hand2", font=("Segoe UI",12),
+                    command=lambda k=key: self._delete_profile(k)).pack(side="right",padx=4)
+            tk.Button(row, text="✏", fg=th("text3"), bg=row.cget("bg"), relief="flat", bd=0,
+                cursor="hand2", font=("Segoe UI",12),
+                command=lambda k=key, p=profile: self._rename_profile(k,p)).pack(side="right",padx=2)
+
+    def _set_profile(self, key):
+        self.cfg.data["active_profile"] = key
+        self.cfg.save()
+        self._on_profile_changed(key)
+        self._refresh_profiles()
+
+    def _new_profile(self):
+        win = tk.Toplevel(self.root); win.title("Nouveau profil")
+        win.geometry("300x160"); win.configure(bg=th("bg")); win.grab_set()
+        tk.Label(win, text="Nom du profil:", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(padx=16, pady=(16,4), anchor="w")
+        var = tk.StringVar()
+        tk.Entry(win, textvariable=var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(fill="x", padx=16)
+        def _ok():
+            name = var.get().strip()
+            if not name: return
+            key = name.lower().replace(" ","_")
+            if key not in self.cfg.data["profiles"]:
+                self.cfg.data["profiles"][key] = empty_profile(name)
+                self.cfg.save(); self._refresh_profiles()
+            win.destroy()
+        tk.Button(win, text="Créer", command=_ok, bg=th("accent"), fg="white",
+            font=("Segoe UI",10,"bold"), relief="flat", bd=0, pady=6, cursor="hand2").pack(fill="x", padx=16, pady=12)
+
+    def _rename_profile(self, key, profile):
+        win = tk.Toplevel(self.root); win.title("Renommer")
+        win.geometry("300x140"); win.configure(bg=th("bg")); win.grab_set()
+        var = tk.StringVar(value=profile.get("name",key))
+        tk.Entry(win, textvariable=var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(fill="x", padx=16, pady=16)
+        def _ok():
+            self.cfg.data["profiles"][key]["name"] = var.get().strip()
+            self.cfg.save(); self._refresh_profiles(); win.destroy()
+        tk.Button(win, text="OK", command=_ok, bg=th("accent"), fg="white",
+            font=("Segoe UI",10,"bold"), relief="flat", bd=0, pady=6, cursor="hand2").pack(fill="x", padx=16)
+
+    def _delete_profile(self, key):
+        if messagebox.askyesno("Supprimer", f"Supprimer le profil « {key} » ?", parent=self.root):
+            del self.cfg.data["profiles"][key]
+            if self.cfg.data.get("active_profile") == key:
+                self.cfg.data["active_profile"] = "default"
+            self.cfg.save(); self._refresh_profiles()
+
+    # ── PARAMÈTRES ────────────────────────────────────────────────────────────
+    def _build_settings(self):
+        f = self._views["settings"]
+        tk.Label(f, text="Paramètres", fg=th("text"), bg=th("bg"),
+            font=("Segoe UI",12,"bold")).pack(anchor="w", padx=14, pady=(12,8))
+
+        nb = ttk.Notebook(f); nb.pack(fill="both", expand=True, padx=12)
+        style = ttk.Style(); style.theme_use("default")
+        style.configure("TNotebook", background=th("bg"), borderwidth=0)
+        style.configure("TNotebook.Tab", background=th("bg3"), foreground=th("text3"),
+            padding=[10,4], font=("Segoe UI",9))
+        style.map("TNotebook.Tab", background=[("selected",th("card"))], foreground=[("selected",th("text"))])
+
+        # ── Connexion série ──
+        ser_tab = tk.Frame(nb, bg=th("bg")); nb.add(ser_tab, text="🔌 Connexion")
+
+        tk.Label(ser_tab, text="Port série (AUTO = détection auto):", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w", padx=12, pady=(12,2))
+        port_var = tk.StringVar(value=self.cfg.data.get("serial_port","AUTO"))
+        port_entry = tk.Entry(ser_tab, textvariable=port_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4)
+        port_entry.pack(fill="x", padx=12, pady=(0,6))
+
+        tk.Label(ser_tab, text="Baud rate:", fg=th("text2"), bg=th("bg"), font=("Segoe UI",9)).pack(anchor="w", padx=12)
+        baud_var = tk.StringVar(value=str(self.cfg.data.get("baud_rate",115200)))
+        tk.Entry(ser_tab, textvariable=baud_var, bg=th("bg3"), fg=th("text"),
+            insertbackground=th("text"), font=("Segoe UI",10), relief="flat", bd=4).pack(fill="x", padx=12, pady=(0,8))
+
+        self._serial_status_lbl = tk.Label(ser_tab, text="", fg=th("text3"), bg=th("bg"), font=("Segoe UI",9))
+        self._serial_status_lbl.pack(anchor="w", padx=12)
+
+        def _connect():
+            port = port_var.get().strip()
+            baud = int(baud_var.get() or 115200)
+            self.cfg.data["serial_port"] = port
+            self.cfg.data["baud_rate"] = baud
+            self.cfg.save()
+            self.transport.start(port, baud=baud, slot=0)
+            self.root.after(800, self._update_serial_status)
+
+        def _refresh_ports():
+            if SERIAL_OK:
+                ports = [p.device for p in serial.tools.list_ports.comports()]
+                port_var.set(ports[0] if ports else "AUTO")
+
+        btns = tk.Frame(ser_tab, bg=th("bg")); btns.pack(fill="x", padx=12, pady=8)
+        tk.Button(btns, text="🔌 Connecter", command=_connect, bg=th("accent"), fg="white",
+            font=("Segoe UI",9,"bold"), relief="flat", bd=0, padx=12, pady=5, cursor="hand2").pack(side="left",padx=(0,8))
+        tk.Button(btns, text="🔍 Scanner", command=_refresh_ports, bg=th("bg3"), fg=th("text2"),
+            font=("Segoe UI",9), relief="flat", bd=0, padx=10, pady=5, cursor="hand2").pack(side="left")
+
+        # ── Overlay ──
+        ov_tab = tk.Frame(nb, bg=th("bg")); nb.add(ov_tab, text="🪟 Overlay")
+        ov_cfg = self.cfg.data.get("overlay",{})
+
+        def ov_row(label, key, default, kind="int"):
+            row = tk.Frame(ov_tab, bg=th("bg")); row.pack(fill="x", padx=12, pady=3)
+            tk.Label(row, text=label, fg=th("text2"), bg=th("bg"),
+                font=("Segoe UI",9), width=20, anchor="w").pack(side="left")
+            var = tk.StringVar(value=str(ov_cfg.get(key,default)))
+            tk.Entry(row, textvariable=var, bg=th("bg3"), fg=th("text"),
+                insertbackground=th("text"), font=("Segoe UI",10),
+                relief="flat", bd=4, width=8).pack(side="left")
+            return var
+
+        tk.Label(ov_tab, text="Configuration de l'overlay profil", fg=th("text3"), bg=th("bg"),
+            font=("Segoe UI",9,"italic")).pack(anchor="w", padx=12, pady=(12,8))
+        v_cell  = ov_row("Taille cellule (px)", "cell_size", 56)
+        v_delay = ov_row("Durée affichage (s)", "delay", 3)
+        v_alpha = ov_row("Opacité (20-100)", "alpha", 97)
+
+        tk.Label(ov_tab, text="Position:", fg=th("text2"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w", padx=12, pady=(6,2))
+        pos_var = tk.StringVar(value=ov_cfg.get("position","br"))
+        pos_sel = ttk.Combobox(ov_tab, textvariable=pos_var, state="readonly",
+            values=["br","bl","tr","tl"], font=("Segoe UI",10))
+        pos_sel.pack(anchor="w", padx=12, pady=(0,8))
+
+        def _save_overlay():
+            self.cfg.data["overlay"] = {
+                "cell_size": int(v_cell.get() or 56),
+                "delay": int(v_delay.get() or 3),
+                "alpha": int(v_alpha.get() or 97),
+                "position": pos_var.get(),
+            }
+            self.cfg.save()
+            self._toast("Overlay sauvegardé")
+
+        def _preview():
+            key = self.cfg.data.get("active_profile","default")
+            profile = self.cfg.data["profiles"].get(key)
+            if profile: self.overlay.show(profile, self.cfg.data.get("overlay",{}))
+
+        btns2 = tk.Frame(ov_tab, bg=th("bg")); btns2.pack(fill="x", padx=12, pady=6)
+        tk.Button(btns2, text="💾 Sauvegarder", command=_save_overlay, bg=th("accent"), fg="white",
+            font=("Segoe UI",9,"bold"), relief="flat", bd=0, padx=10, pady=5, cursor="hand2").pack(side="left", padx=(0,8))
+        tk.Button(btns2, text="👁 Prévisualiser", command=_preview, bg=th("bg3"), fg=th("text2"),
+            font=("Segoe UI",9), relief="flat", bd=0, padx=10, pady=5, cursor="hand2").pack(side="left")
+
+        # ── Protocole ──
+        proto_tab = tk.Frame(nb, bg=th("bg")); nb.add(proto_tab, text="📡 Protocole")
+        proto = self.cfg.data.get("protocol",{})
+        tk.Label(proto_tab, text="Patrons de trames série ({i}=index, {v}=valeur)",
+            fg=th("text3"), bg=th("bg"), font=("Segoe UI",8,"italic")).pack(anchor="w", padx=12, pady=(12,8))
+
+        proto_vars = {}
+        for key, label, default in [
+            ("in_press","Bouton ON","btn{i}:on"),
+            ("in_release","Bouton OFF","btn{i}:off"),
+            ("in_pot","Potard","pot{i}:{v}"),
+            ("in_long_press","Long press (opt.)",""),
+            ("in_double_click","Double clic (opt.)",""),
+            ("out_led","LED (sortie)","led{i}:{v}"),
+        ]:
+            row = tk.Frame(proto_tab, bg=th("bg")); row.pack(fill="x", padx=12, pady=2)
+            tk.Label(row, text=label+":", fg=th("text2"), bg=th("bg"),
+                font=("Segoe UI",9), width=22, anchor="w").pack(side="left")
+            var = tk.StringVar(value=proto.get(key,default))
+            tk.Entry(row, textvariable=var, bg=th("bg3"), fg=th("text"),
+                insertbackground=th("text"), font=("Consolas",10),
+                relief="flat", bd=4).pack(side="left", fill="x", expand=True)
+            proto_vars[key] = var
+
+        def _save_proto():
+            self.cfg.data["protocol"] = {k:v.get() for k,v in proto_vars.items()}
+            self.cfg.save(); self._toast("Protocole sauvegardé")
+
+        tk.Button(proto_tab, text="💾 Sauvegarder", command=_save_proto, bg=th("accent"), fg="white",
+            font=("Segoe UI",9,"bold"), relief="flat", bd=0, padx=12, pady=5, cursor="hand2").pack(anchor="w", padx=12, pady=10)
+
+        # ── MAJ ──
+        upd_tab = tk.Frame(nb, bg=th("bg")); nb.add(upd_tab, text="🚀 Mises à jour")
+        tk.Label(upd_tab, text=f"Version actuelle : {APP_VERSION}", fg=th("text3"), bg=th("bg"),
+            font=("Segoe UI",9)).pack(anchor="w", padx=12, pady=(12,6))
+        self._upd_status = tk.Label(upd_tab, text="", fg=th("text2"), bg=th("bg"), font=("Segoe UI",9))
+        self._upd_status.pack(anchor="w", padx=12)
+        self._upd_bar_frame = tk.Frame(upd_tab, bg=th("bg")); self._upd_bar_frame.pack(fill="x",padx=12,pady=4)
+
+        def _check_update():
+            self._upd_status.configure(text="⏳ Vérification…"); self.root.update_idletasks()
+            def _do():
+                import urllib.request, urllib.error
+                REPO="tuturpotter-web/Imperium"
                 try:
-                    import io, base64 as b64
-                    raw = b64.b64decode(img_data[img_data.index(",")+1:])
-                    sz  = max(CELL-16, 18)
-                    tkimg = None
-                    try:
-                        from PIL import Image as PI, ImageTk
-                        tkimg = ImageTk.PhotoImage(PI.open(io.BytesIO(raw)).resize((sz,sz), PI.LANCZOS))
-                    except ImportError:
-                        # Fallback tk natif — fonctionne uniquement PNG
-                        try:
-                            tkimg = tk.PhotoImage(data=b64.b64encode(raw).decode())
-                            # subsample si trop grand
-                            tw, th = tkimg.width(), tkimg.height()
-                            if tw > sz or th > sz:
-                                f = max(tw//sz, th//sz, 1)
-                                if f > 1: tkimg = tkimg.subsample(f, f)
-                        except Exception as e2:
-                            log.warning(f"Overlay tk.PhotoImage btn{i}: {e2}")
-                    if tkimg:
-                        win._imgs.append(tkimg)
-                        tk.Label(cell, image=tkimg, bg=CARD).place(relx=.5, rely=.36, anchor="center")
-                        tk.Label(cell, text=label, fg=FG3, bg=CARD,
-                                 font=("Segoe UI",6)).place(relx=.5, rely=.82, anchor="center")
-                        placed = True
+                    req=urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                        headers={"User-Agent":"Imperium-updater"})
+                    with urllib.request.urlopen(req,timeout=8) as r: data=json.loads(r.read())
+                    latest=data.get("tag_name","").lstrip("v")
+                    if latest and latest!=APP_VERSION:
+                        asset=next((a for a in data.get("assets",[]) if a["name"].endswith(".exe")),None)
+                        dl=asset["browser_download_url"] if asset else ""
+                        self.root.after(0,lambda:self._upd_status.configure(text=f"🚀 MAJ disponible : {APP_VERSION} → {latest}",fg=th("yellow")))
+                        if dl: self.root.after(0,lambda: self._show_download_btn(dl))
+                    else:
+                        self.root.after(0,lambda:self._upd_status.configure(text=f"✅ À jour ({APP_VERSION})",fg=th("green")))
                 except Exception as e:
-                    log.warning(f"Overlay img btn{i}: {e}")
-            if not placed:
-                icon = b.get("icon","") or "●"
-                tk.Label(cell, text=icon,  fg=FG,  bg=CARD,
-                         font=("Segoe UI Emoji",15)).place(relx=.5, rely=.36, anchor="center")
-                tk.Label(cell, text=label, fg=FG3, bg=CARD,
-                         font=("Segoe UI",6)).place(relx=.5, rely=.78, anchor="center")
+                    self.root.after(0,lambda:self._upd_status.configure(text=f"⚠ {e}",fg=th("red")))
+            threading.Thread(target=_do,daemon=True).start()
 
-        tk.Frame(main, bg=BDR, height=1).pack(fill="x", padx=PAD, pady=(8,0))
+        tk.Button(upd_tab, text="🔍 Vérifier les MAJ", command=_check_update,
+            bg=th("accent"), fg="white", font=("Segoe UI",9,"bold"),
+            relief="flat", bd=0, padx=12, pady=5, cursor="hand2").pack(anchor="w", padx=12, pady=6)
 
-        # ── Potards ───────────────────────────────────────────────────────
-        POT_LABELS = {
-            "volume_system":"Vol.sys","volume_app":"Vol.app","brightness":"Luminosité",
-            "scroll":"Scroll","zoom_level":"Zoom","media_seek":"Seek",
-            "discord_volume":"Discord","spotify_volume":"Spotify","game_volume":"Jeu",
-            "mic_volume":"Micro","obs_volume":"OBS","led_strip_color":"LED","custom":"Custom",
-        }
-        pf = tk.Frame(main, bg=BG)
-        pf.pack(padx=PAD, pady=(8,12))
-        pots = profile.get("pots", {})
-        for i in range(COLS):
-            p       = pots.get(str(i), {})
-            pot_ov  = OV_POTS.get(str(i), OV_POTS.get(i, {}))
-            name    = (p.get("name") or f"Pot {i+1}")[:8]
-            action  = POT_LABELS.get(p.get("action",""), (p.get("action","") or "—")[:8])
-            custom_text = pot_ov.get("text","") if isinstance(pot_ov, dict) else ""
-            # Images are stored directly in profile pots (per-profile), not in overlay config
-            img_data = p.get("image","") or (pot_ov.get("image","") if isinstance(pot_ov, dict) else "")
-
-            outer = tk.Frame(pf, bg=BDR)
-            outer.grid(row=0, column=i, padx=GAP//2)
-            cell = tk.Frame(outer, bg=BG3, width=CELL-2, height=CELL-2)
-            cell.pack(padx=1, pady=1)
-            cell.pack_propagate(False)
-
-            placed = False
-            if img_data and img_data.startswith("data:image"):
+    def _show_download_btn(self, url):
+        for w in self._upd_bar_frame.winfo_children(): w.destroy()
+        def _dl():
+            for w in self._upd_bar_frame.winfo_children(): w.destroy()
+            pb = ttk.Progressbar(self._upd_bar_frame, length=300, mode="determinate")
+            pb.pack(pady=4); lbl=tk.Label(self._upd_bar_frame,text="0%",fg=th("text2"),bg=th("bg"),font=("Segoe UI",8)); lbl.pack()
+            def _do():
+                import urllib.request, tempfile
                 try:
-                    import io, base64 as b64
-                    raw = b64.b64decode(img_data[img_data.index(",")+1:])
-                    sz  = max(CELL-22, 14)
-                    tkimg = None
-                    try:
-                        from PIL import Image as PI, ImageTk
-                        tkimg = ImageTk.PhotoImage(PI.open(io.BytesIO(raw)).resize((sz,sz), PI.LANCZOS))
-                    except ImportError:
-                        try:
-                            tkimg = tk.PhotoImage(data=b64.b64encode(raw).decode())
-                            tw, th = tkimg.width(), tkimg.height()
-                            if tw > sz or th > sz:
-                                f = max(tw//sz, th//sz, 1)
-                                if f > 1: tkimg = tkimg.subsample(f, f)
-                        except Exception as e2:
-                            log.warning(f"Overlay tk.PhotoImage pot{i}: {e2}")
-                    if tkimg:
-                        win._imgs.append(tkimg)
-                        tk.Label(cell, image=tkimg, bg=BG3).place(relx=.5, rely=.28, anchor="center")
-                        lbl = custom_text or name
-                        tk.Label(cell, text=lbl, fg=FG, bg=BG3,
-                                 font=("Segoe UI",5,"bold")).place(relx=.5, rely=.80, anchor="center")
-                        placed = True
+                    fname=url.split("/")[-1]; tmp=os.path.join(tempfile.gettempdir(),fname)
+                    def rep(bn,bs,fs):
+                        pct=min(100,int(bn*bs/fs*100)) if fs>0 else 0
+                        self.root.after(0,lambda p=pct:(pb.configure(value=p),lbl.configure(text=f"{p}%")))
+                    urllib.request.urlretrieve(url,tmp,rep)
+                    self.root.after(0,lambda:lbl.configure(text="✅ Installation…"))
+                    self.root.after(500,lambda:(subprocess.Popen([tmp],creationflags=CREATE_NO_WINDOW),self.root.after(1000,lambda:os._exit(0))))
                 except Exception as e:
-                    log.warning(f"Overlay img pot{i}: {e}")
-            if not placed:
-                cv = tk.Canvas(cell, width=26, height=26, bg=BG3, highlightthickness=0)
-                cv.place(relx=.5, rely=.26, anchor="center")
-                cv.create_oval(1,1,25,25, outline=FG3, width=1,   fill=BG4)
-                cv.create_oval(5,5,21,21, outline=ACC, width=1.5, fill=BG3)
-                cv.create_oval(10,10,16,16, fill=ACC, outline="")
-                disp = custom_text or name
-                tk.Label(cell, text=disp,   fg=FG,  bg=BG3,
-                         font=("Segoe UI",6,"bold")).place(relx=.5, rely=.65, anchor="center")
-                if not custom_text:
-                    tk.Label(cell, text=action, fg=FG3, bg=BG3,
-                             font=("Segoe UI",5)).place(relx=.5, rely=.83, anchor="center")
+                    self.root.after(0,lambda:lbl.configure(text=f"⚠ {e}",fg=th("red")))
+            threading.Thread(target=_do,daemon=True).start()
+        tk.Button(self._upd_bar_frame, text="⬇ Télécharger et installer", command=_dl,
+            bg=th("yellow"), fg=th("bg"), font=("Segoe UI",9,"bold"),
+            relief="flat", bd=0, padx=12, pady=5, cursor="hand2").pack(anchor="w")
 
-        def _close():
-            self._close_timer = None
-            try:
-                if win.winfo_exists(): win.destroy()
-            except: pass
-            if self._popup is win: self._popup = None
-        self._close_timer = root.after(DELAY, _close)
-        # Force render of all widgets immediately — no visible build delay
-        win.update_idletasks()
+    # ── JOURNAL ───────────────────────────────────────────────────────────────
+    def _build_log(self):
+        f = self._views["log"]
+        top = tk.Frame(f, bg=th("bg")); top.pack(fill="x", padx=14, pady=(12,6))
+        tk.Label(top, text="Journal d'événements", fg=th("text"), bg=th("bg"),
+            font=("Segoe UI",12,"bold")).pack(side="left")
+        tk.Button(top, text="🗑 Effacer", command=self._clear_log,
+            bg=th("bg3"), fg=th("text3"), font=("Segoe UI",9),
+            relief="flat", bd=0, padx=8, pady=3, cursor="hand2").pack(side="right")
+        self._log_text = tk.Text(f, bg=th("bg3"), fg=th("text2"),
+            font=("Consolas",9), relief="flat", bd=0, state="disabled", wrap="word")
+        self._log_text.pack(fill="both", expand=True, padx=14, pady=(0,10))
+        self._log_text.tag_configure("ts", foreground=th("text4"))
+        self._log_text.tag_configure("rx", foreground=th("green"))
+        self._log_text.tag_configure("tx", foreground=th("accent"))
+        self._log_text.tag_configure("ev", foreground=th("yellow"))
 
-    def show_profile(self, profile: dict, ov_cfg: dict = None):
-        """Affiche l'overlay pour ce profil. Thread-safe."""
-        if self._queue is not None:
-            try: self._queue.put_nowait((profile, ov_cfg or {}))
-            except Exception as e: log.warning(f"Overlay queue: {e}")
+    def _add_log(self, kind, text):
+        t = self._log_text
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        t.configure(state="normal")
+        t.insert("end", f"[{ts}] ", "ts")
+        t.insert("end", text+"\n", kind)
+        t.see("end"); t.configure(state="disabled")
 
-# ── APP WATCHER ──────────────────────────────────────────────────────────────
-class AppWatcher:
-    def __init__(self, on_change):
-        self._cb=on_change; self._cur=""; threading.Thread(target=self._loop,daemon=True).start()
+    def _clear_log(self):
+        self._log_text.configure(state="normal")
+        self._log_text.delete("1.0","end")
+        self._log_text.configure(state="disabled")
 
-    def _loop(self):
-        while True:
-            app=""
-            if WIN32_OK:
-                try:
-                    hwnd=win32gui.GetForegroundWindow()
-                    _,pid=win32process.GetWindowThreadProcessId(hwnd)
-                    app=psutil.Process(pid).name().lower().replace(".exe","")
-                except: pass
-            if app!=self._cur:
-                self._cur=app; self._cb(app)
-            time.sleep(0.5)
-
-# ── SERIAL ────────────────────────────────────────────────────────────────────
-class Transport:
-    """Deux ports série indépendants (slot 0 = USB1, slot 1 = USB2).
-    Détection automatique du type d'appui à partir du timing on/off :
-      - on→off < 400 ms  → press (appui simple)
-      - on→off ≥ 400 ms  → long_press
-      - deux 'on' en < 300 ms → double_click
-    Aucun calcul côté ESP32 requis : il envoie juste btn{i}:on / btn{i}:off.
-    """
-    LONG_MS   = 400   # ms au-delà desquels c'est un long press
-    DOUBLE_MS = 300   # ms entre deux ON pour détecter un double-clic
-
-    def __init__(self, on_msg):
-        self._cb = on_msg
-        self._slots = [None, None]   # serial.Serial | None
-        self._port_names = [None, None]
-        # timing data per button index: {btn_idx: {"on_t": float, "last_on": float}}
-        self._btn_state: dict = {}
-
-    def start(self, port="AUTO", baud=115200, slot=0):
-        if not SERIAL_OK: return
-        # Ferme l'ancien port de ce slot si nécessaire
-        old = self._slots[slot]
-        if old:
-            try: old.close()
-            except: pass
-            self._slots[slot] = None
-            self._port_names[slot] = None
-
-        if port == "AUTO":
-            ports = serial.tools.list_ports.comports()
-            # Évite de réutiliser un port déjà assigné à l'autre slot
-            other = self._port_names[1 - slot]
-            candidates = [p.device for p in ports
-                          if any(k in p.description.upper() for k in ["CP210","CH340","USB","FTDI"])
-                          and p.device != other]
-            if not candidates:
-                candidates = [p.device for p in ports if p.device != other]
-            port = candidates[0] if candidates else None
-
-        if not port: return
+    # ── TOAST ─────────────────────────────────────────────────────────────────
+    def _toast(self, msg, ms=2500):
         try:
-            ser = serial.Serial(port, baud, timeout=0.1)
-            self._slots[slot] = ser
-            self._port_names[slot] = port
-            threading.Thread(target=self._loop, args=(ser, slot), daemon=True).start()
-            log.info(f"Serial slot {slot}: {port} @ {baud}")
-        except Exception as e:
-            log.error(f"Serial slot {slot}: {e}")
+            if hasattr(self,"_toast_win") and self._toast_win.winfo_exists():
+                self._toast_win.destroy()
+        except: pass
+        w = tk.Toplevel(self.root); w.overrideredirect(True)
+        w.configure(bg=th("bg3"))
+        w.attributes("-topmost", True)
+        try: w.attributes("-alpha", 0.92)
+        except: pass
+        tk.Label(w, text=msg, fg=th("text"), bg=th("bg3"),
+            font=("Segoe UI",9), padx=14, pady=6).pack()
+        w.update_idletasks()
+        rx = self.root.winfo_x() + self.root.winfo_width()//2 - w.winfo_width()//2
+        ry = self.root.winfo_y() + self.root.winfo_height() - 60
+        w.geometry(f"+{rx}+{ry}")
+        self._toast_win = w
+        self.root.after(ms, lambda: w.destroy() if w.winfo_exists() else None)
 
-    def is_connected(self, slot=0) -> bool:
-        s = self._slots[slot]
-        return bool(s and s.is_open)
+    # ── CALLBACKS ─────────────────────────────────────────────────────────────
 
-    @property
-    def port_name(self):
-        return self._port_names[0]
-
-    def _loop(self, ser, slot):
-        while ser and ser.is_open:
-            try:
-                line = ser.readline().decode("utf-8", errors="ignore").strip()
-                if line:
-                    self._cb(line, slot)
-            except:
-                time.sleep(1)
-        if self._slots[slot] is ser:
-            self._slots[slot] = None
-            self._port_names[slot] = None
-
-    def _handle_timing(self, btn_idx: int, event: str, on_msg_fn):
-        """Calcule le type d'appui à partir du timing on/off."""
-        now = time.time()
-        st  = self._btn_state.setdefault(btn_idx, {})
-
-        if event == "on":
-            last_on = st.get("last_on")
-            st["on_t"] = now
-            st["last_on"] = now
-            if last_on and (now - last_on) * 1000 < self.DOUBLE_MS:
-                # Deux ON rapides = double clic
-                st["last_on"] = None  # consommé
-                on_msg_fn(btn_idx, "double_click")
-        elif event == "off":
-            on_t = st.get("on_t")
-            if on_t is None: return
-            duration_ms = (now - on_t) * 1000
-            st["on_t"] = None
-            ev = "long_press" if duration_ms >= self.LONG_MS else "press"
-            on_msg_fn(btn_idx, ev)
-
-    def send(self, obj):
-        for ser in self._slots:
-            if ser and ser.is_open:
-                try: ser.write((json.dumps(obj, separators=(",",":"))+"\n").encode())
+    def _update_led_bars(self):
+        """Met à jour les barres LED existantes sans les reconstruire."""
+        m = self._metrics_data
+        keys = ["cpu","ram","gpu_usage","ssd_usage"]
+        strips_cfg = self.cfg.data.get("led_strips",{})
+        for i, frame in self._led_frames.items():
+            if not frame.winfo_exists(): continue
+            key = strips_cfg.get(str(i),{}).get("metric", keys[i] if i<4 else "cpu")
+            val = int(m.get(key,0) or 0)
+            color = "#22c55e" if val<33 else ("#f59e0b" if val<66 else "#ef4444")
+            key_lbl = key.upper().replace("_USAGE","").replace("_","/")
+            # Détruire et recréer juste la bar (frame enfant)
+            for child in frame.winfo_children():
+                try: child.destroy()
                 except: pass
+            bar = tk.Frame(frame, bg=color, height=32)
+            bar.place(x=0,y=0,relwidth=val/100)
+            tk.Label(frame,text=f"  {key_lbl}",fg=th("text"),bg=th("bg4"),font=("Segoe UI",9,"bold")).place(x=8,rely=.5,anchor="w")
+            tk.Label(frame,text=f"{val}%",fg=th("text2"),bg=th("bg4"),font=("Segoe UI",9)).place(relx=1,x=-10,rely=.5,anchor="e")
 
-    def send_raw(self, line: str, slot=0):
-        ser = self._slots[slot]
-        if ser and ser.is_open:
-            try: ser.write((line+"\n").encode())
-            except: pass
+    def _on_profile_changed(self, key):
+        self._update_profile_label()
+        profile = self.cfg.data["profiles"].get(key)
+        if profile: self.overlay.show(profile, self.cfg.data.get("overlay",{}))
+        self._toast(f"Profil : {profile.get('name',key) if profile else key}")
+        if self._active_view == "device": self._refresh_device()
 
-# ── MACRODECK CORE ────────────────────────────────────────────────────────────
-# ── PLUGINS ────────────────────────────────────────────────────────────────────
-# Système de plugins sans recompilation : chaque plugin est un simple fichier
-# .json posé dans le dossier "plugins" (à côté de l'exe ou du .py). Il déclare
-# une ou plusieurs actions custom, exécutées via une commande shell/PowerShell
-# avec des variables substituées (ex: {value} pour la valeur d'un potard).
-#
-# Exemple de plugin "plugins/discord_bot.json" :
-# {
-#   "name": "Discord Bot Webhook",
-#   "version": "1.0",
-#   "actions": [
-#     {
-#       "type": "plugin_discord_say",
-#       "name": "Discord : Envoyer message webhook",
-#       "icon": "💬",
-#       "desc": "Poste un message via un webhook Discord",
-#       "params": [
-#         {"key":"webhook_url","lbl":"URL Webhook","ph":"https://discord.com/api/webhooks/..."},
-#         {"key":"message","lbl":"Message","ph":"Bonjour !"}
-#       ],
-#       "run": {
-#         "kind": "http",
-#         "method": "POST",
-#         "url": "{webhook_url}",
-#         "body": {"content": "{message}"}
-#       }
-#     }
-#   ]
-# }
-#
-# "run.kind" peut être :
-#   "shell"      → exécute "command" (fenêtre toujours cachée)
-#   "powershell" → exécute "command" via powershell -Command (fenêtre cachée)
-#   "http"       → fait une requête HTTP (url/method/body, utile pour webhooks/API locales)
-# Les valeurs {param_key} et {value} (pour les potards) sont substituées dans
-# command / url / body avant exécution.
+    def _on_serial(self, raw, slot):
+        proto = self.cfg.data.get("protocol",{})
+        self._add_log("rx", f"[ESP32] {raw}")
 
-class PluginManager:
-    def __init__(self):
-        self.plugins = []     # liste de manifestes chargés
-        self.actions = {}     # type -> définition d'action (pour le catalogue GUI)
-        self.reload()
-
-    def _plugins_dir(self) -> Path:
-        base = Path(_app_dir_persistent())
-        d = base / "plugins"
-        d.mkdir(exist_ok=True)
-        return d
-
-    def reload(self):
-        self.plugins = []
-        self.actions = {}
-        d = self._plugins_dir()
-        for f in sorted(d.glob("*.json")):
-            try:
-                with open(f, "r", encoding="utf-8") as fp:
-                    manifest = json.load(fp)
-                manifest["_file"] = f.name
-                self.plugins.append(manifest)
-                for act in manifest.get("actions", []):
-                    t = act.get("type")
-                    if t:
-                        self.actions[t] = act
-                log.info(f"Plugin chargé: {manifest.get('name', f.name)}")
-            except Exception as e:
-                log.error(f"Plugin invalide {f.name}: {e}")
-
-    def catalog(self) -> list:
-        """Retourne le catalogue d'actions exposées par tous les plugins, pour la GUI."""
-        out = []
-        for p in self.plugins:
-            for act in p.get("actions", []):
-                out.append({
-                    "cat": "Plugins",
-                    "icon": act.get("icon","🧩"),
-                    "type": act.get("type"),
-                    "name": act.get("name","Action plugin"),
-                    "desc": act.get("desc", p.get("name","")),
-                    "params": act.get("params", []),
-                    "plugin": p.get("name", p.get("_file","")),
-                })
-        return out
-
-    def run(self, action_type: str, params: dict, value=None):
-        act = self.actions.get(action_type)
-        if not act: return
-        run_def = act.get("run", {})
-        kind = run_def.get("kind", "shell")
-
-        def _sub(s):
-            if not isinstance(s, str): return s
-            out = s
-            for k, v in params.items():
-                out = out.replace("{"+k+"}", str(v))
-            if value is not None:
-                out = out.replace("{value}", str(value))
-            return out
-
-        try:
-            if kind == "shell":
-                cmd = _sub(run_def.get("command",""))
-                if cmd: run_silent(cmd)
-
-            elif kind == "powershell":
-                cmd = _sub(run_def.get("command",""))
-                if cmd:
-                    run_hidden(["powershell","-NoProfile","-Command", cmd],
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-
-            elif kind == "http":
-                import urllib.request
-                url = _sub(run_def.get("url",""))
-                method = run_def.get("method","GET")
-                body = run_def.get("body")
-                req = urllib.request.Request(url, method=method)
-                if body:
-                    body_sub = json.loads(_sub(json.dumps(body)))
-                    req.data = json.dumps(body_sub).encode()
-                    req.add_header("Content-Type","application/json")
-                with urllib.request.urlopen(req, timeout=10) as r:
-                    log.info(f"Plugin HTTP {url} → {r.status}")
-        except Exception as e:
-            log.error(f"Plugin run '{action_type}': {e}")
-
-class MacroDeck:
-    def __init__(self):
-        self.cfg       = ConfigManager()
-        self.ws_clients= set()
-        self.plugins   = PluginManager()
-        self.engine    = ActionEngine(self.cfg, self._broadcast, self.plugins)
-        self.metrics   = Metrics()
-        self.transport = Transport(self._on_esp32)
-        self.watcher   = AppWatcher(self._on_app)
-        self.overlay   = ProfileOverlayWindow()
-
-    def _broadcast(self, obj):
-        # Déclenche l'overlay système au-dessus de toutes les fenêtres pour
-        # CHAQUE changement de profil, peu importe la source (bouton dédié,
-        # détection auto par app active, sélection manuelle dans la GUI...) :
-        # on centralise ici plutôt que de dupliquer l'appel à 5 endroits.
-        if obj.get("type") == "profile_changed":
-            key = obj.get("profile")
-            profile = self.cfg.data.get("profiles", {}).get(key)
-            if profile and self.overlay:
-                ov_cfg = self.cfg.data.get("overlay", {})
-                self.overlay.show_profile(profile, ov_cfg)
-        raw=json.dumps(obj)
-        for ws in list(self.ws_clients):
-            asyncio.ensure_future(ws.send(raw))
-
-    def _on_app(self, app):
-        for name,profile in self.cfg.data["profiles"].items():
-            trigger=(profile.get("app_trigger") or "").lower()
-            if trigger and trigger in app.lower():
-                if self.cfg.data.get("active_profile")!=name:
-                    self.cfg.data["active_profile"]=name
-                    self._broadcast({"type":"profile_changed","profile":name})
-                return
-
-    def _on_esp32(self, raw: str, slot: int = 0):
-        raw = raw.strip()
-        if not raw: return
-        proto = self.cfg.data.get("protocol", {})
-
-        # ── Potard ─────────────────────────────────────────────────────────
-        pat_pot = proto.get("in_pot", "")
+        pat_pot = proto.get("in_pot","")
         if pat_pot:
             try:
                 m = pattern_to_regex(pat_pot).match(raw)
                 if m:
-                    idx = int(m.group("i")); val = int(m.group("v"))
-                    pot_cfg = self.cfg.active()["pots"].get(str(idx), {})
-                    self.engine.run_pot(pot_cfg, val)
-                    self._broadcast({"type":"pot_event","pot":idx,"value":val})
+                    idx=int(m.group("i")); val=int(m.group("v"))
+                    self.engine.run_pot(self.cfg.active()["pots"].get(str(idx),{}), val)
                     return
-            except Exception as e:
-                log.error(f"Patron 'in_pot' invalide: {e}")
+            except: pass
 
-        # ── Bouton ON/OFF (timing-based) ────────────────────────────────────
-        pat_on  = proto.get("in_press", "btn{i}:on")
-        pat_off = proto.get("in_release", "btn{i}:off")
+        pat_on  = proto.get("in_press","btn{i}:on")
+        pat_off = proto.get("in_release","btn{i}:off")
 
-        def _dispatch_btn(idx, ev_name):
-            profile = self.cfg.active()
-            actions = profile["buttons"].get(str(idx), {}).get(ev_name, [])
-            if actions:
-                threading.Thread(target=self.engine.run, args=(actions,), daemon=True).start()
-            self._broadcast({"type":"button_event","button":idx,"event":ev_name})
+        def _dispatch(idx, ev):
+            actions = self.cfg.active()["buttons"].get(str(idx),{}).get(ev,[])
+            if actions: threading.Thread(target=self.engine.run,args=(actions,),daemon=True).start()
+            self._add_log("ev", f"BTN{idx} → {ev}")
+            self.root.after(0, lambda: self._flash_btn(idx))
 
         if pat_on:
             try:
-                m = pattern_to_regex(pat_on).match(raw)
-                if m:
-                    idx = int(m.group("i"))
-                    self.transport._handle_timing(idx, "on", _dispatch_btn)
-                    return
-            except Exception as e:
-                log.error(f"Patron 'in_press' invalide: {e}")
-
+                m=pattern_to_regex(pat_on).match(raw)
+                if m: self.transport._handle_timing(int(m.group("i")),"on",_dispatch); return
+            except: pass
         if pat_off:
             try:
-                m = pattern_to_regex(pat_off).match(raw)
-                if m:
-                    idx = int(m.group("i"))
-                    self.transport._handle_timing(idx, "off", _dispatch_btn)
-                    self._broadcast({"type":"button_event","button":idx,"event":"release"})
-                    return
-            except Exception as e:
-                log.error(f"Patron 'in_release' invalide: {e}")
+                m=pattern_to_regex(pat_off).match(raw)
+                if m: self.transport._handle_timing(int(m.group("i")),"off",_dispatch); return
+            except: pass
 
-        # ── Patrons optionnels long/double (si firmware les envoie directement) ──
-        for ev_key, ev_name in [("in_long_press","long_press"),("in_double_click","double_click")]:
-            pat = proto.get(ev_key, "")
+        for ev_key,ev_name in [("in_long_press","long_press"),("in_double_click","double_click")]:
+            pat=proto.get(ev_key,"")
             if not pat: continue
             try:
-                m = pattern_to_regex(pat).match(raw)
-                if m:
-                    idx = int(m.group("i"))
-                    _dispatch_btn(idx, ev_name)
-                    return
-            except Exception as e:
-                log.error(f"Patron '{ev_key}' invalide: {e}")
+                m=pattern_to_regex(pat).match(raw)
+                if m: _dispatch(int(m.group("i")),ev_name); return
+            except: pass
 
-        # Fallback JSON historique (rétrocompatibilité avec un firmware déjà
-        # flashé sur l'ancien protocole, même si "protocol" a été modifié).
+        # Fallback JSON
         try:
-            msg=json.loads(raw)
-        except: return
-        t=msg.get("t")
-        if t in ("press","long_press","double_click"):
-            idx=msg.get("i",0)
-            profile=self.cfg.active()
-            actions=profile["buttons"].get(str(idx),{}).get(t,[])
-            threading.Thread(target=self.engine.run,args=(actions,),daemon=True).start()
-            self._broadcast({"type":"button_event","button":idx,"event":t})
-        elif t=="pot":
-            idx=msg.get("i",0); val=msg.get("v",0)
-            pot_cfg=self.cfg.active()["pots"].get(str(idx),{})
-            self.engine.run_pot(pot_cfg, val)
-            self._broadcast({"type":"pot_event","pot":idx,"value":val})
+            msg=json.loads(raw); t=msg.get("t")
+            if t in ("press","long_press","double_click"):
+                idx=msg.get("i",0)
+                actions=self.cfg.active()["buttons"].get(str(idx),{}).get(t,[])
+                threading.Thread(target=self.engine.run,args=(actions,),daemon=True).start()
+                _dispatch(idx,t)
+            elif t=="pot":
+                idx=msg.get("i",0); val=msg.get("v",0)
+                self.engine.run_pot(self.cfg.active()["pots"].get(str(idx),{}),val)
+        except: pass
 
-    async def _metrics_loop(self):
+    def _update_serial_status(self):
+        ok = self.transport.is_connected(0)
+        port = self.transport._port_names[0]
+        self._serial_dot.delete("all")
+        self._serial_dot.create_oval(0,0,10,10, fill=th("green") if ok else th("red"), outline="")
+        self._serial_lbl.configure(text=port if ok else "Déconnecté",
+            fg=th("text2") if ok else th("text3"))
+        if hasattr(self,"_serial_status_lbl"):
+            self._serial_status_lbl.configure(
+                text=f"✅ Connecté : {port}" if ok else "❌ Non connecté",
+                fg=th("green") if ok else th("red"))
+
+    def _update_profile_label(self):
+        p = self.cfg.active()
+        self._lbl_profile.configure(text=f"◈ {p.get('name','?')}")
+
+    # ── BOUCLE MÉTRIQUES ─────────────────────────────────────────────────────
+    def _start_metrics_loop(self):
         self.metrics.collect()  # init réseau
-        while True:
-            await asyncio.sleep(1)
-            m=self.metrics.collect()
-            self._broadcast({"type":"metrics","data":m})
-            # Envoi LED → ESP32, au format défini dans protocol.out_led
-            # (ex: '{"t":"led","s":0,"v":42}' ou tout autre format texte
-            # comme 'LED0:42%' selon ce que le firmware attend).
-            keys=["cpu","ram","gpu_usage","ssd_usage"]
-            out_pat = self.cfg.data.get("protocol",{}).get("out_led", '{"t":"led","s":{i},"v":{v}}')
-            for i in range(4):
-                k=self.cfg.data.get("led_strips",{}).get(str(i),{}).get("metric",keys[i])
-                v=min(100,int(float(m.get(k,0) or 0)))
-                self.transport.send_raw(pattern_format(out_pat, i=i, v=v))
+        def _loop():
+            while True:
+                time.sleep(1)
+                m = self.metrics.collect()
+                self._metrics_data = m
+                keys=["cpu","ram","gpu_usage","ssd_usage"]
+                out_pat=self.cfg.data.get("protocol",{}).get("out_led","led{i}:{v}")
+                for i in range(4):
+                    k=self.cfg.data.get("led_strips",{}).get(str(i),{}).get("metric",keys[i])
+                    self.transport.send_raw(pattern_format(out_pat,i=i,v=min(100,int(float(m.get(k,0) or 0)))))
+                # MAJ UI en thread-safe
+                self.root.after(0, self._tick_ui)
+        threading.Thread(target=_loop,daemon=True).start()
 
-    async def _ws_handler(self, ws: WebSocketServerProtocol):
-        self.ws_clients.add(ws)
-        # Envoyer la config complète à la connexion
-        await ws.send(json.dumps({"type":"config","data":self.cfg.data}))
-        try:
-            async for raw in ws:
-                await self._handle(json.loads(raw), ws)
-        except: pass
-        finally: self.ws_clients.discard(ws)
+    def _tick_ui(self):
+        m = self._metrics_data
+        # Heure topbar
+        self._lbl_time.configure(text=m.get("time",""))
+        # Serial status (polling)
+        self._update_serial_status()
+        # Vue métriques si active
+        if self._active_view == "metrics":
+            self._refresh_metrics_ui()
+        # LED strips — mise à jour légère (couleur + valeur uniquement)
+        if self._active_view == "device":
+            self._update_led_bars()
 
-    async def _handle(self, msg, ws):
-        t=msg.get("type")
-        if t=="save_config":
-            self.cfg.data=msg["data"]
-            self.cfg.save()
-            await ws.send(json.dumps({"type":"config_saved"}))
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTANCE UNIQUE + MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+def _port_is_free(p):
+    import socket as _s; s=_s.socket(_s.AF_INET,_s.SOCK_STREAM)
+    try: s.bind(("127.0.0.1",p)); s.close(); return True
+    except: s.close(); return False
 
-        elif t=="create_profile":
-            name=msg.get("key",""); label=msg.get("label","Nouveau profil")
-            if name and name not in self.cfg.data["profiles"]:
-                self.cfg.data["profiles"][name]=empty_profile(label)
-                self.cfg.save()
-                self._broadcast({"type":"config","data":self.cfg.data})
-
-        elif t=="delete_profile":
-            name=msg.get("key","")
-            if name in self.cfg.data["profiles"] and name!="default":
-                del self.cfg.data["profiles"][name]
-                if self.cfg.data.get("active_profile")==name:
-                    self.cfg.data["active_profile"]="default"
-                self.cfg.save()
-                self._broadcast({"type":"config","data":self.cfg.data})
-
-        elif t=="rename_profile":
-            name=msg.get("key",""); label=msg.get("label","")
-            if name in self.cfg.data["profiles"] and label:
-                self.cfg.data["profiles"][name]["name"]=label
-                self.cfg.save()
-                self._broadcast({"type":"config","data":self.cfg.data})
-
-        elif t=="set_profile":
-            name=msg.get("profile","")
-            if name in self.cfg.data["profiles"]:
-                self.cfg.data["active_profile"]=name
-                self.cfg.save()
-                self._broadcast({"type":"profile_changed","profile":name})
-
-        elif t=="test_action":
-            threading.Thread(target=self.engine.run,args=(msg.get("actions",[]),),daemon=True).start()
-
-        elif t=="get_ports":
-            ports=[]
-            if SERIAL_OK: ports=[p.device for p in serial.tools.list_ports.comports()]
-            await ws.send(json.dumps({"type":"ports","data":ports}))
-
-        elif t=="get_apps":
-            # Le scan complet (menu démarrer + registre + Program Files) peut
-            # prendre plusieurs secondes : on l'exécute dans un thread pour ne
-            # jamais geler la boucle asyncio (sinon plus rien ne répond pendant
-            # le scan, donnant l'impression que le picker ne s'affiche jamais).
-            async def _do_get_apps():
-                loop = asyncio.get_event_loop()
-                try:
-                    apps = await loop.run_in_executor(None, get_installed_apps)
-                except Exception as e:
-                    log.error(f"get_apps: {e}")
-                    apps = []
-                await ws.send(json.dumps({"type":"apps","data":apps}))
-            asyncio.ensure_future(_do_get_apps())
-
-        elif t=="get_plugins":
-            await ws.send(json.dumps({"type":"plugins","data":self.plugins.catalog(),
-                "meta":[{"name":p.get("name"),"file":p.get("_file"),"version":p.get("version","")} for p in self.plugins.plugins]}))
-
-        elif t=="reload_plugins":
-            self.plugins.reload()
-            await ws.send(json.dumps({"type":"plugins","data":self.plugins.catalog(),
-                "meta":[{"name":p.get("name"),"file":p.get("_file"),"version":p.get("version","")} for p in self.plugins.plugins]}))
-            self._broadcast({"type":"toast","message":f"✓ {len(self.plugins.plugins)} plugin(s) chargé(s)"})
-
-        elif t=="get_processes":
-            # Processus en cours (pour "fermer une application", choisir une fenêtre...)
-            procs=[]
-            seen=set()
-            for p in psutil.process_iter(["name"]):
-                try:
-                    n=p.info["name"]
-                    if n and n.lower() not in seen:
-                        seen.add(n.lower()); procs.append(n)
-                except: pass
-            await ws.send(json.dumps({"type":"processes","data":sorted(procs)}))
-
-        elif t=="get_audio_sessions":
-            # Applications ayant une session audio active (pour volume_app)
-            sessions=list_audio_sessions()
-            await ws.send(json.dumps({"type":"audio_sessions","data":sessions}))
-
-        elif t=="pick_folder":
-            # Ouvre le sélecteur de dossier natif Windows dans un thread (non bloquant
-            # pour la boucle asyncio) et renvoie le chemin choisi une fois sélectionné.
-            field = msg.get("field","")
-            async def _do_pick_folder():
-                loop = asyncio.get_event_loop()
-                path = await loop.run_in_executor(None, self._native_picker, True)
-                await ws.send(json.dumps({"type":"picked_path","field":field,"path":path}))
-            asyncio.ensure_future(_do_pick_folder())
-
-        elif t=="pick_file":
-            field = msg.get("field","")
-            async def _do_pick_file():
-                loop = asyncio.get_event_loop()
-                path = await loop.run_in_executor(None, self._native_picker, False)
-                await ws.send(json.dumps({"type":"picked_path","field":field,"path":path}))
-            asyncio.ensure_future(_do_pick_file())
-
-        elif t=="connect_serial":
-            slot = int(msg.get("slot", 0))
-            baud = int(msg.get("baud", 115200))
-            self.transport.start(msg.get("port","AUTO"), baud=baud, slot=slot)
-            await ws.send(json.dumps({"type":"serial_status",
-                "connected":self.transport.is_connected(0),
-                "connected2":self.transport.is_connected(1),
-                "port":self.transport._port_names[0],
-                "port2":self.transport._port_names[1]}))
-
-        elif t=="get_serial_status":
-            await ws.send(json.dumps({"type":"serial_status",
-                "connected":self.transport.is_connected(0),
-                "connected2":self.transport.is_connected(1),
-                "port":self.transport._port_names[0],
-                "port2":self.transport._port_names[1]}))
-
-        elif t=="save_protocol":
-            # Valide chaque patron avant de sauvegarder : un regex invalide
-            # ne doit jamais planter le parsing des trames série en live.
-            proto = msg.get("protocol", {})
-            errors = {}
-            for key, pat in proto.items():
-                try: pattern_to_regex(pat) if key.startswith("in_") else pattern_format(pat, i=0, v=0)
-                except Exception as e: errors[key] = str(e)
-            if errors:
-                await ws.send(json.dumps({"type":"protocol_saved","ok":False,"errors":errors}))
-            else:
-                self.cfg.data["protocol"] = proto
-                self.cfg.save()
-                await ws.send(json.dumps({"type":"protocol_saved","ok":True}))
-
-        elif t=="test_protocol_pattern":
-            # Permet de tester un patron entrant en simulant une trame brute
-            # sans avoir besoin de l'ESP32 physiquement connecté.
-            pattern = msg.get("pattern","")
-            sample = msg.get("sample","")
+if __name__ == "__main__":
+    # Instance unique via lockfile
+    LOCK = Path(os.path.expanduser("~")) / ".macrodeck" / "imperium.lock"
+    try:
+        if LOCK.exists():
             try:
-                m = pattern_to_regex(pattern).match(sample.strip())
-                if m:
-                    await ws.send(json.dumps({"type":"protocol_test_result","ok":True,
-                        "groups":{k:v for k,v in m.groupdict().items()}}))
-                else:
-                    await ws.send(json.dumps({"type":"protocol_test_result","ok":False,"error":"La trame d'exemple ne correspond pas au patron"}))
-            except Exception as e:
-                await ws.send(json.dumps({"type":"protocol_test_result","ok":False,"error":str(e)}))
+                pid = int(LOCK.read_text())
+                if psutil.pid_exists(pid):
+                    if sys.platform == "win32":
+                        ctypes.windll.user32.MessageBoxW(0,
+                            "Imperium est déjà lancé.", "Imperium", 0x40|0x1000)
+                    sys.exit(0)
+            except: pass
+        LOCK.write_text(str(os.getpid()))
+    except: pass
 
-        elif t=="simulate_esp32_frame":
-            raw = msg.get("raw","").strip()
-            if not raw:
-                await ws.send(json.dumps({"type":"protocol_test_result","ok":False,"error":"Trame vide"}))
-                return
-            # On teste d'abord quel patron correspond (pour l'affichage),
-            # puis on exécute vraiment la trame comme si elle venait de l'ESP32.
-            proto = self.cfg.data.get("protocol", {})
-            matched_event = None
-            matched_groups = {}
-            for ev_key, ev_name in [("in_press","press"),("in_long_press","long_press"),
-                                     ("in_double_click","double_click"),("in_release","release"),
-                                     ("in_pot","pot")]:
-                pat = proto.get(ev_key,"")
-                if not pat: continue
-                try:
-                    m2 = pattern_to_regex(pat).match(raw)
-                    if m2:
-                        matched_event = ev_name
-                        matched_groups = m2.groupdict()
-                        break
-                except: continue
-            # Tente aussi le fallback JSON
-            if not matched_event:
-                try:
-                    parsed = json.loads(raw)
-                    t2 = parsed.get("t","")
-                    if t2 in ("press","long_press","double_click","release","pot"):
-                        matched_event = t2
-                        matched_groups = {k:v for k,v in parsed.items() if k!="t"}
-                except: pass
-            # Exécute la trame
-            self._on_esp32(raw)
-            if matched_event:
-                await ws.send(json.dumps({"type":"protocol_test_result","ok":True,
-                    "event":matched_event,"groups":matched_groups,
-                    "message":f"Trame reconnue comme '{matched_event}' et exécutée ✓"}))
-            else:
-                await ws.send(json.dumps({"type":"protocol_test_result","ok":False,
-                    "error":"Aucun patron ne correspond à cette trame (trame envoyée quand même)"}))
+    root = tk.Tk()
+    app = ImperiumApp(root)
 
-        elif t=="open_update_url":
-            download_url = msg.get("download_url","")
-            async def _do_download(dl_url):
-                import urllib.request, urllib.error, tempfile
-                GITHUB_REPO = "tuturpotter-web/Imperium"
-                try:
-                    # Récupère l'URL de téléchargement si pas fournie
-                    if not dl_url:
-                        api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-                        req = urllib.request.Request(api, headers={"User-Agent":"Imperium-updater"})
-                        with urllib.request.urlopen(req, timeout=8) as r:
-                            release = json.loads(r.read())
-                        assets = release.get("assets", [])
-                        exe_asset = next((a for a in assets if a["name"].endswith(".exe")), None)
-                        if not exe_asset:
-                            await ws.send(json.dumps({"type":"update_progress","error":"Aucun .exe trouvé dans la release GitHub"}))
-                            return
-                        dl_url = exe_asset["browser_download_url"]
-                        filename = exe_asset["name"]
-                        total_size = exe_asset.get("size", 0)
-                    else:
-                        filename = dl_url.split("/")[-1]
-                        total_size = 0
-
-                    await ws.send(json.dumps({"type":"update_progress","status":"downloading","pct":0,"filename":filename}))
-
-                    tmp_path = os.path.join(tempfile.gettempdir(), filename)
-                    downloaded = 0
-                    last_pct = -1
-
-                    def _report(block_num, block_size, file_size):
-                        nonlocal downloaded, last_pct
-                        downloaded = block_num * block_size
-                        pct = min(100, int(downloaded / file_size * 100)) if file_size > 0 else 0
-                        if pct != last_pct:
-                            last_pct = pct
-                            asyncio.ensure_future(ws.send(json.dumps({"type":"update_progress","status":"downloading","pct":pct,"filename":filename})))
-
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, lambda: urllib.request.urlretrieve(dl_url, tmp_path, _report))
-
-                    await ws.send(json.dumps({"type":"update_progress","status":"launching","pct":100,"filename":filename}))
-                    await asyncio.sleep(0.5)
-
-                    # Lance le setup et quitte
-                    subprocess.Popen([tmp_path], creationflags=subprocess.CREATE_NO_WINDOW)
-                    await asyncio.sleep(1)
-                    os._exit(0)
-
-                except Exception as e:
-                    await ws.send(json.dumps({"type":"update_progress","error":str(e)}))
-            asyncio.ensure_future(_do_download(download_url))
-
-        elif t=="check_update":
-            async def _do_check_update():
-                import urllib.request, urllib.error
-                GITHUB_REPO = "tuturpotter-web/Imperium"
-                try:
-                    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-                    req = urllib.request.Request(url, headers={"User-Agent": "Imperium-updater"})
-                    with urllib.request.urlopen(req, timeout=8) as r:
-                        data = json.loads(r.read())
-                    latest = data.get("tag_name", "").lstrip("v")
-                    current = APP_VERSION
-                    assets = data.get("assets", [])
-                    exe_asset = next((a for a in assets if a["name"].endswith(".exe")), None)
-                    download_url = exe_asset["browser_download_url"] if exe_asset else ""
-                    if latest and latest != current:
-                        await ws.send(json.dumps({"type":"update_available","current":current,"latest":latest,"download_url":download_url}))
-                    else:
-                        await ws.send(json.dumps({"type":"toast","message":f"✓ Imperium {current} est à jour"}))
-                except urllib.error.URLError as e:
-                    await ws.send(json.dumps({"type":"toast","message":f"⚠ Vérification MAJ impossible : {e.reason}"}))
-                except Exception as e:
-                    await ws.send(json.dumps({"type":"toast","message":f"⚠ Vérification MAJ : {e}"}))
-            asyncio.ensure_future(_do_check_update())
-
-        elif t=="preview_overlay":
-            key = self.cfg.data.get("active_profile","default")
-            profile = self.cfg.data.get("profiles",{}).get(key)
-            if profile and self.overlay:
-                ov_cfg = self.cfg.data.get("overlay",{})
-                self.overlay.show_profile(profile, ov_cfg)
-
-        elif t=="update_button":
-            pid=msg.get("profile","default"); bid=str(msg.get("button",0))
-            data=msg.get("data",{})
-            if pid in self.cfg.data["profiles"]:
-                self.cfg.data["profiles"][pid]["buttons"][bid]=data
-                self.cfg.save()
-
-    def _native_picker(self, folder: bool) -> str:
-        """Ouvre une boîte de dialogue Windows native pour choisir un dossier ou fichier.
-        Tourne dans un script PowerShell séparé (bloquant) pour ne jamais geler
-        la boucle asyncio principale, fenêtre cachée par défaut sauf le dialog lui-même."""
-        try:
-            if folder:
-                ps = (
-                    "Add-Type -AssemblyName System.Windows.Forms;"
-                    "$f=New-Object System.Windows.Forms.FolderBrowserDialog;"
-                    "if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}"
-                )
-            else:
-                ps = (
-                    "Add-Type -AssemblyName System.Windows.Forms;"
-                    "$f=New-Object System.Windows.Forms.OpenFileDialog;"
-                    "if($f.ShowDialog() -eq 'OK'){Write-Output $f.FileName}"
-                )
-            result = subprocess.run(
-                ["powershell","-NoProfile","-Command", ps],
-                capture_output=True, text=True, timeout=120
-            )
-            return result.stdout.strip()
-        except Exception as e:
-            log.error(f"native_picker: {e}")
-            return ""
-
-    async def run(self):
-        self.transport.start(self.cfg.data.get("serial_port","AUTO"))
-        # max_size augmenté : la config peut contenir des icônes de boutons
-        # personnalisées encodées en base64 (plusieurs dizaines de Ko chacune,
-        # potentiellement nombreuses avec plusieurs profils/pages). La limite
-        # par défaut de la lib (1 Mo) suffirait en usage normal mais on prend
-        # de la marge pour ne jamais subir de déconnexion silencieuse.
-        srv=await websockets.serve(self._ws_handler,"localhost",WS_PORT,max_size=10*1024*1024)
-        await asyncio.gather(self._metrics_loop(), srv.wait_closed())
-
-# ── HTTP SERVER ───────────────────────────────────────────────────────────────
-def _app_dir() -> str:
-    """Retourne le dossier où se trouve gui.html, que l'app tourne en .py
-    ou compilée en .exe (PyInstaller --onefile extrait dans sys._MEIPASS,
-    un dossier TEMPORAIRE recréé à chaque lancement — bon pour des
-    ressources en lecture seule comme gui.html, mauvais pour tout ce qui
-    doit persister, voir _app_dir_persistent() ci-dessous)."""
-    if getattr(sys, "frozen", False):
-        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
-
-def _app_dir_persistent() -> str:
-    """Retourne le dossier RÉEL et STABLE à côté de l'exécutable (ou du .py),
-    par opposition à _app_dir() qui pointe vers un dossier temporaire en
-    mode .exe compilé. À utiliser pour tout ce qui doit survivre entre deux
-    lancements : dossier plugins/, etc. (la config elle-même est dans
-    ~/.macrodeck/, donc indépendante de l'emplacement de l'exe)."""
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
-
-def _http_server():
-    import http.server, socketserver
-    web_dir = _app_dir()
-    class Q(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=web_dir, **kwargs)
-        def log_message(self, *a): pass
-        def end_headers(self):
-            # Désactive complètement le cache navigateur pour gui.html :
-            # sans ça, le navigateur sert l'ancien fichier mis en cache
-            # même après un rebuild/redéploiement, ce qui donnait l'impression
-            # que les corrections CSS n'étaient pas appliquées.
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("Expires", "0")
-            super().end_headers()
-    try:
-        with socketserver.TCPServer(("127.0.0.1", HTTP_PORT), Q) as h:
-            h.serve_forever()
-    except OSError:
-        pass
-
-# ── VÉRIF INSTANCE UNIQUE ────────────────────────────────────────────────────
-def _port_is_free(port: int) -> bool:
-    import socket as _socket
-    s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", port))
-        s.close()
-        return True
-    except OSError:
-        s.close()
-        return False
-
-def _notify_already_running():
-    """Affiche une popup native si une instance tourne déjà (sinon échec silencieux car console cachée)."""
-    if sys.platform == "win32":
-        try:
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                "Imperium est déjà lancé.\n\n"
-                "Vérifie la barre des tâches ou le Gestionnaire des tâches.\n"
-                "Si nécessaire, termine le processus Imperium.exe avant de relancer.",
-                "Imperium — déjà en cours",
-                0x40 | 0x1000  # MB_ICONINFORMATION | MB_TOPMOST
-            )
+    def _on_close():
+        try: app.cfg.save()
         except: pass
+        try: LOCK.unlink()
+        except: pass
+        root.destroy()
 
-def _open_app_window():
-    """Ouvre la GUI dans une vraie fenêtre Windows native via pywebview
-    (utilise WebView2 / Edge Chromium intégré à Windows 10/11).
-    Aucun navigateur externe n'est lancé — c'est une vraie application desktop."""
-    import urllib.request
-    url = f"http://127.0.0.1:{HTTP_PORT}/gui.html"
-    # Attendre que le serveur HTTP soit prêt
-    for _ in range(40):
-        try:
-            urllib.request.urlopen(url, timeout=0.5)
-            break
-        except Exception:
-            time.sleep(0.25)
-
+    root.protocol("WM_DELETE_WINDOW", _on_close)
     try:
-        import webview
-        # Crée une fenêtre native Windows (titre + taille fixe, sans barre navigateur)
-        webview.create_window(
-            "Imperium",
-            url,
-            width=820,
-            height=680,
-            min_size=(640, 480),
-            frameless=False,
-            easy_drag=False,
-        )
-        # gui='edgechromium' utilise WebView2 (Edge) intégré à Windows 10/11
-        # gui='cef' ou 'qt' sont des fallbacks si Edge n'est pas dispo
-        webview.start(gui='edgechromium')
-        # Quand la fenêtre se ferme, on quitte le backend aussi
-        os._exit(0)
-    except Exception as e:
-        log.warning(f"pywebview indisponible ({e}), fallback navigateur")
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-
-# ── MAIN ──────────────────────────────────────────────────────────────────────
-if __name__=="__main__":
-    if not _port_is_free(WS_PORT):
-        _notify_already_running()
-        sys.exit(0)
-
-    threading.Thread(target=_http_server, daemon=True).start()
-    threading.Thread(target=_open_app_window, daemon=True).start()
-
-    deck=MacroDeck()
-    try:
-        asyncio.run(deck.run())
-    except KeyboardInterrupt:
-        pass
-    except OSError as e:
-        # Sécurité supplémentaire si le port se libère/reprend entre la vérif et le bind réel
-        _notify_already_running()
-        sys.exit(0)
+        root.mainloop()
     finally:
-        # Sauvegarde finale en sécurité : chaque modification est déjà écrite
-        # sur disque immédiatement (cfg.save() est synchrone), mais on
-        # s'assure ici qu'aucun état en mémoire ne se perd à la fermeture
-        # (Ctrl+C, fermeture du processus, arrêt système...).
-        try: deck.cfg.save()
+        try: app.cfg.save()
+        except: pass
+        try: LOCK.unlink()
         except: pass
