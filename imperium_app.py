@@ -53,7 +53,7 @@ CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 # ══ THÈME ════════════════════════════════════════════════════════════════════
 C = {
     "bg0":"#08090c","bg1":"#0d0e12","bg2":"#12141a","bg3":"#181b22","bg4":"#1e212b",
-    "card":"#1c1f29","border":"#ffffff12","accent":"#6366f1","adim":"#1e1f35",
+    "card":"#1c1f29","border":"#1e2130","accent":"#6366f1","adim":"#1e1f35",
     "text":"#f1f5f9","text2":"#94a3b8","text3":"#475569",
     "green":"#22c55e","yellow":"#eab308","red":"#ef4444",
     "blue":"#3b82f6","purple":"#a855f7","orange":"#f97316",
@@ -529,7 +529,7 @@ class ProfileOverlay:
         DELAY=max(1,min(30,int(ov.get("delay",3))))*1000
         POS=ov.get("position","br"); ALPHA=max(0.2,min(1.0,int(ov.get("alpha",97))/100))
         ACC="#6366f1"; BG="#08090c"; CARD="#1c1f29"; FG="#f1f5f9"; FG3="#94a3b8"
-        BG3="#181b22"; BG4="#1e212b"; BDR="#ffffff12"; GAP=4; PAD=10; COLS=4
+        BG3="#181b22"; BG4="#1e212b"; BDR="#1e2130"; GAP=4; PAD=10; COLS=4
         W=COLS*CELL+(COLS-1)*GAP+PAD*2; H=38+1+8+CELL*2+GAP+8+1+8+CELL+12
         sw=root.winfo_screenwidth(); sh=root.winfo_screenheight(); mg=20
         X,Y={"br":(sw-W-mg,sh-H-60),"bl":(mg,sh-H-60),"tr":(sw-W-mg,mg+40)}.get(POS,(mg,mg+40))
@@ -610,7 +610,7 @@ def sep(parent,**kw): f=tk.Frame(parent,bg=C["border"],height=1); f.pack(fill="x
 class Drawer:
     def __init__(self,root,width=320):
         self.root=root; self.width=width; self._open=False
-        self.overlay=tk.Frame(root,bg="#00000088")
+        self.overlay=tk.Frame(root,bg="#000000")
         self.panel=tk.Frame(root,bg=C["bg1"],width=width)
         self.hdr=tk.Frame(self.panel,bg=C["bg1"],height=46); self.hdr.pack(fill="x"); self.hdr.pack_propagate(False)
         tk.Frame(self.hdr,bg=C["border"],height=1).pack(side="bottom",fill="x")
@@ -1262,7 +1262,7 @@ class ImperiumApp:
             win.destroy()
         sbtn(win,"Créer",ok,style="primary",padx=12,pady=6).pack(fill="x",padx=16,pady=12); win.bind("<Return>",lambda e:ok())
     def _rename_profile(self,key,profile):
-        win=tk.Toplevel(self.root); win.title("Renommer"); win.geometry("300,130".replace(",","x")); win.configure(bg=C["bg1"]); win.grab_set()
+        win=tk.Toplevel(self.root); win.title("Renommer"); win.geometry("300x130"); win.configure(bg=C["bg1"]); win.grab_set()
         v=tk.StringVar(value=profile.get("name",key)); ef=sinp(win,textvariable=v,font=("Segoe UI",10)); ef.pack(fill="x",padx=16,pady=16)
         def ok(): self.cfg.data["profiles"][key]["name"]=v.get().strip(); self.cfg.save(); self._refresh_profiles(); win.destroy()
         sbtn(win,"OK",ok,style="primary",padx=12,pady=6).pack(fill="x",padx=16); win.bind("<Return>",lambda e:ok())
