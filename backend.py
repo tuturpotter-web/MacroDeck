@@ -472,84 +472,145 @@ def _timer(s, lbl):
 
 # ── MÉTRIQUES ────────────────────────────────────────────────────────────────
 class Metrics:
+    """
+    Métriques système 100% psutil + nvidia-smi, sans OpenHardwareMonitor.
+    Le CPU % est mesuré en tâche de fond toutes les secondes pour être précis.
+    Les températures CPU sont lues via psutil.sensors_temperatures() ou WMI ACPI.
+    """
     def __init__(self):
         self._net_prev=psutil.net_io_counters(); self._net_t=time.time()
-        self._ohm=None; self._thermal_wmi=None
-        if WMI_OK:
-            try: self._ohm=wmilib.WMI(namespace="root\\OpenHardwareMonitor")
-            except: pass
-            try: self._thermal_wmi=wmilib.WMI(namespace="root\\wmi")
-            except: pass
+        self._cpu_pct=0.0
+        # Démarrer la mesure CPU en fond (interval=1s donne des valeurs correctes)
+        threading.Thread(target=self._cpu_loop, daemon=True).start()
 
-    def _read_nvidia_smi(self):
+    def _cpu_loop(self):
+        """Mesure le CPU toutes les secondes avec interval=1 pour avoir de vraies valeurs."""
+        while True:
+            try: self._cpu_pct = psutil.cpu_percent(interval=1)
+            except: time.sleep(1)
+
+    def _cpu_temp(self):
+        """Température CPU — psutil.sensors_temperatures() sur Linux/Mac,
+        WMI MSAcpi sur Windows, sinon None."""
+        # Méthode 1 : psutil (marche sur Linux, certains Windows avec drivers)
         try:
-            p = run_hidden(["nvidia-smi","--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name",
-                "--format=csv,noheader,nounits"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            out, _ = p.communicate(timeout=2)
-            usage, mem_used, mem_total, temp, name = [x.strip() for x in out.strip().split("\n")[0].split(",")]
-            return {"usage":float(usage),"vram":round(float(mem_used)/float(mem_total)*100,1) if float(mem_total) else 0,
-                    "temp":float(temp),"name":name}
-        except: return None
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for key in ("coretemp","k10temp","zenpower","cpu_thermal","acpitz"):
+                    if key in temps:
+                        vals = [t.current for t in temps[key] if t.current and t.current > 0]
+                        if vals: return round(max(vals), 1)
+                # Fallback : premier capteur disponible
+                for key, entries in temps.items():
+                    vals = [t.current for t in entries if t.current and 0 < t.current < 150]
+                    if vals: return round(max(vals), 1)
+        except: pass
+        # Méthode 2 : WMI ACPI natif Windows (sans OpenHardwareMonitor)
+        if WMI_OK:
+            try:
+                w = wmilib.WMI(namespace=r"root\wmi")
+                for zone in w.MSAcpi_ThermalZoneTemperature():
+                    k = zone.CurrentTemperature
+                    if k and k > 2731:  # > 0°C en dixièmes de Kelvin
+                        return round(k / 10.0 - 273.15, 1)
+            except: pass
+        return None
+
+    def _gpu(self):
+        """GPU via nvidia-smi (NVIDIA) ou wmi Win32_VideoController (basique)."""
+        if GPU_OK:
+            try:
+                p = run_hidden(
+                    ["nvidia-smi","--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name",
+                     "--format=csv,noheader,nounits"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                out, _ = p.communicate(timeout=2)
+                line = out.strip().split("\n")[0]
+                usage, mu, mt, temp, name = [x.strip() for x in line.split(",")]
+                mt_f = float(mt)
+                return {
+                    "usage": float(usage),
+                    "vram": round(float(mu)/mt_f*100, 1) if mt_f else 0,
+                    "temp": float(temp),
+                    "name": name.strip()
+                }
+            except: pass
+        # Fallback : WMI Win32_VideoController (usage non dispo mais au moins le nom)
+        if WMI_OK:
+            try:
+                w = wmilib.WMI()
+                for gpu in w.Win32_VideoController():
+                    if gpu.Name:
+                        return {"usage":0,"vram":0,"temp":None,"name":gpu.Name}
+            except: pass
+        return None
 
     def collect(self):
         m = {}
-        m["cpu"] = psutil.cpu_percent(interval=None)
-        m["cpu_cores"] = psutil.cpu_count(logical=True)
-        freq=psutil.cpu_freq(); m["cpu_freq"]=round(freq.current,0) if freq else 0
-        m["cpu_temp"] = self._ohm_val("Temperature","CPU")
 
-        ram=psutil.virtual_memory()
-        m["ram"]=ram.percent; m["ram_used_gb"]=round(ram.used/1e9,1); m["ram_total_gb"]=round(ram.total/1e9,1)
+        # CPU — valeur mesurée en fond, toujours fraîche
+        m["cpu"]       = self._cpu_pct
+        m["cpu_cores"] = psutil.cpu_count(logical=True) or 0
+        freq = psutil.cpu_freq()
+        m["cpu_freq"]  = round(freq.current, 0) if freq else 0
+        m["cpu_temp"]  = self._cpu_temp()
 
-        m["gpu_usage"]=0; m["gpu_vram"]=0; m["gpu_temp"]=None; m["gpu_name"]=""
-        if GPU_OK:
-            gpu=self._read_nvidia_smi()
-            if gpu: m["gpu_usage"]=gpu["usage"]; m["gpu_vram"]=gpu["vram"]; m["gpu_temp"]=gpu["temp"]; m["gpu_name"]=gpu["name"]
+        # RAM
+        ram = psutil.virtual_memory()
+        m["ram"]          = round(ram.percent, 1)
+        m["ram_used_gb"]  = round(ram.used  / 1e9, 1)
+        m["ram_total_gb"] = round(ram.total / 1e9, 1)
 
-        m["ssd_usage"]=0
-        try: m["ssd_usage"]=psutil.disk_usage("C:\\").percent
+        # GPU
+        m["gpu_usage"] = 0; m["gpu_vram"] = 0; m["gpu_temp"] = None; m["gpu_name"] = ""
+        gpu = self._gpu()
+        if gpu:
+            m["gpu_usage"] = gpu["usage"]; m["gpu_vram"] = gpu["vram"]
+            m["gpu_temp"]  = gpu["temp"];  m["gpu_name"] = gpu["name"]
+
+        # Disques
+        m["ssd_usage"] = 0
+        try:    m["ssd_usage"] = psutil.disk_usage("C:\\").percent
         except:
-            try: m["ssd_usage"]=psutil.disk_usage("/").percent
+            try: m["ssd_usage"] = psutil.disk_usage("/").percent
             except: pass
-
-        m["disks"]=[]
-        for p in psutil.disk_partitions(all=False):
+        m["disks"] = []
+        for part in psutil.disk_partitions(all=False):
             try:
-                u=psutil.disk_usage(p.mountpoint)
-                m["disks"].append({"device":p.device,"mountpoint":p.mountpoint,
-                    "total_gb":round(u.total/1e9,1),"used_gb":round(u.used/1e9,1),"percent":u.percent})
+                u = psutil.disk_usage(part.mountpoint)
+                m["disks"].append({
+                    "device": part.device, "mountpoint": part.mountpoint,
+                    "total_gb": round(u.total/1e9,1),
+                    "used_gb":  round(u.used /1e9,1),
+                    "percent":  u.percent
+                })
             except: pass
 
-        now=time.time(); net=psutil.net_io_counters(); dt=now-self._net_t
-        m["net_up"]=round((net.bytes_sent-self._net_prev.bytes_sent)/dt/1024,1) if dt>0 else 0
-        m["net_down"]=round((net.bytes_recv-self._net_prev.bytes_recv)/dt/1024,1) if dt>0 else 0
-        self._net_prev=net; self._net_t=now
+        # Réseau
+        now = time.time(); net = psutil.net_io_counters(); dt = now - self._net_t
+        m["net_up"]   = round((net.bytes_sent - self._net_prev.bytes_sent) / dt / 1024, 1) if dt > 0 else 0
+        m["net_down"] = round((net.bytes_recv - self._net_prev.bytes_recv) / dt / 1024, 1) if dt > 0 else 0
+        self._net_prev = net; self._net_t = now
 
-        m["uptime"]=str(datetime.timedelta(seconds=int(time.time()-psutil.boot_time())))
-        m["volume"]=get_volume(); m["muted"]=get_mute()
-        n=datetime.datetime.now(); m["time"]=n.strftime("%H:%M:%S"); m["date"]=n.strftime("%d/%m/%Y")
+        # Système
+        m["uptime"] = str(datetime.timedelta(seconds=int(time.time()-psutil.boot_time())))
+        m["volume"] = get_volume(); m["muted"] = get_mute()
+        n = datetime.datetime.now()
+        m["time"] = n.strftime("%H:%M:%S"); m["date"] = n.strftime("%d/%m/%Y")
 
-        procs=[]
+        # Top processus (cpu_percent() sans interval = valeur depuis dernier appel = correct ici)
+        procs = []
         for p in sorted(psutil.process_iter(["name","cpu_percent","memory_percent"]),
-                        key=lambda x:(x.info.get("cpu_percent") or 0),reverse=True)[:8]:
-            try: procs.append({"name":p.info["name"],"cpu":round(p.info.get("cpu_percent") or 0,1),"mem":round(p.info.get("memory_percent") or 0,1)})
+                        key=lambda x: (x.info.get("cpu_percent") or 0), reverse=True)[:8]:
+            try:
+                procs.append({
+                    "name": p.info["name"],
+                    "cpu":  round(p.info.get("cpu_percent")  or 0, 1),
+                    "mem":  round(p.info.get("memory_percent") or 0, 1)
+                })
             except: pass
-        m["top_processes"]=procs
+        m["top_processes"] = procs
         return m
-
-    def _ohm_val(self, typ, frag):
-        if self._ohm:
-            try:
-                for s in self._ohm.Sensor():
-                    if s.SensorType==typ and frag.lower() in s.Name.lower(): return round(s.Value,1)
-            except: pass
-        if typ == "Temperature" and self._thermal_wmi:
-            try:
-                for zone in self._thermal_wmi.MSAcpi_ThermalZoneTemperature():
-                    k=zone.CurrentTemperature
-                    if k and k > 0: return round(k/10.0-273.15,1)
-            except: pass
-        return None
 
 # ── OVERLAY (mini-streamdeck Tkinter, au-dessus de tout) ─────────────────────
 class ProfileOverlayWindow:
@@ -736,61 +797,125 @@ class AppWatcher:
 
 # ── SERIAL ────────────────────────────────────────────────────────────────────
 class Transport:
+    """
+    3 slots USB :
+      slot 0 = ESP32 — reçoit et envoie des trames série
+      slot 1 & 2 = USB passifs — monitoring seulement (clés USB, hubs, etc.)
+    """
     LONG_MS=400; DOUBLE_MS=300
+    N_SLOTS = 3
 
     def __init__(self, on_msg):
-        self._cb=on_msg; self._slots=[None,None]; self._port_names=[None,None]; self._btn_state={}
+        self._cb       = on_msg
+        self._slots    = [None] * self.N_SLOTS
+        self._port_names = [None] * self.N_SLOTS
+        self._btn_state  = {}
+        # Démarrer le monitoring passif des ports USB 1 et 2
+        threading.Thread(target=self._usb_monitor_loop, daemon=True).start()
 
+    # ── Slot 0 (ESP32) ────────────────────────────────────────────────────────
     def start(self, port="AUTO", baud=115200, slot=0):
         if not SERIAL_OK: return
-        old=self._slots[slot]
+        old = self._slots[slot]
         if old:
             try: old.close()
             except: pass
-            self._slots[slot]=None; self._port_names[slot]=None
-        if port=="AUTO":
-            ports=serial.tools.list_ports.comports()
-            other=self._port_names[1-slot]
-            candidates=[p.device for p in ports if any(k in p.description.upper() for k in ["CP210","CH340","USB","FTDI"]) and p.device!=other]
-            if not candidates: candidates=[p.device for p in ports if p.device!=other]
-            port=candidates[0] if candidates else None
+        self._slots[slot] = None; self._port_names[slot] = None
+        if port == "AUTO":
+            ports = serial.tools.list_ports.comports()
+            # Éviter de prendre un port déjà utilisé par un autre slot
+            used  = {self._port_names[i] for i in range(self.N_SLOTS) if i != slot and self._port_names[i]}
+            # Préférer les puces connues ESP32
+            cands = [p.device for p in ports
+                     if any(k in p.description.upper() for k in ["CP210","CH340","FTDI","USB SERIAL"])
+                     and p.device not in used]
+            if not cands:
+                cands = [p.device for p in ports if p.device not in used]
+            port = cands[0] if cands else None
         if not port: return
         try:
-            ser=serial.Serial(port,baud,timeout=0.1)
-            self._slots[slot]=ser; self._port_names[slot]=port
-            threading.Thread(target=self._loop,args=(ser,slot),daemon=True).start()
+            ser = serial.Serial(port, baud, timeout=0.1)
+            self._slots[slot] = ser; self._port_names[slot] = port
+            threading.Thread(target=self._loop, args=(ser, slot), daemon=True).start()
             log.info(f"Serial slot {slot}: {port} @ {baud}")
-        except Exception as e: log.error(f"Serial slot {slot}: {e}")
+        except Exception as e:
+            log.error(f"Serial slot {slot}: {e}")
 
     def is_connected(self, slot=0):
-        s=self._slots[slot]; return bool(s and s.is_open)
+        s = self._slots[slot]; return bool(s and s.is_open)
 
     def _loop(self, ser, slot):
+        """Boucle de lecture — uniquement slot 0 (ESP32)."""
         while ser and ser.is_open:
             try:
-                line=ser.readline().decode("utf-8",errors="ignore").strip()
-                if line: self._cb(line,slot)
+                line = ser.readline().decode("utf-8", errors="ignore").strip()
+                if line: self._cb(line, slot)
             except: time.sleep(1)
         if self._slots[slot] is ser:
-            self._slots[slot]=None; self._port_names[slot]=None
-
-    def _handle_timing(self, btn_idx, event, on_msg_fn):
-        now=time.time(); st=self._btn_state.setdefault(btn_idx,{})
-        if event=="on":
-            last_on=st.get("last_on"); st["on_t"]=now; st["last_on"]=now
-            if last_on and (now-last_on)*1000 < self.DOUBLE_MS:
-                st["last_on"]=None; on_msg_fn(btn_idx,"double_click")
-        elif event=="off":
-            on_t=st.get("on_t")
-            if on_t is None: return
-            st["on_t"]=None
-            on_msg_fn(btn_idx,"long_press" if (now-on_t)*1000>=self.LONG_MS else "press")
+            self._slots[slot] = None; self._port_names[slot] = None
 
     def send_raw(self, line: str, slot=0):
-        ser=self._slots[slot]
+        """Envoie une trame série — uniquement slot 0 (ESP32)."""
+        ser = self._slots[slot]
         if ser and ser.is_open:
-            try: ser.write((line+"\n").encode())
+            try: ser.write((line + "\n").encode())
             except: pass
+
+    # ── Slots 1 & 2 (USB passifs) ────────────────────────────────────────────
+    def _usb_monitor_loop(self):
+        """Surveille les ports USB 1 et 2 en mode passif.
+        Détecte connexion/déconnexion et vitesse (Full/Hi/Super Speed).
+        Ne lit pas de trames, ne bloque pas."""
+        if not SERIAL_OK: return
+        while True:
+            try:
+                all_ports = {p.device: p for p in serial.tools.list_ports.comports()}
+                esp_port  = self._port_names[0]
+                passive   = [p for dev, p in all_ports.items() if dev != esp_port]
+                for slot in (1, 2):
+                    idx = slot - 1  # index dans passive[]
+                    if idx < len(passive):
+                        self._port_names[slot] = passive[idx].device
+                    else:
+                        self._port_names[slot] = None
+            except: pass
+            time.sleep(2)
+
+    def usb_info(self, slot):
+        """Retourne les infos du port USB passif (slot 1 ou 2)."""
+        if not SERIAL_OK or slot not in (1, 2):
+            return {"connected": False, "port": None, "description": "", "speed": ""}
+        port = self._port_names[slot]
+        if not port:
+            return {"connected": False, "port": None, "description": "", "speed": ""}
+        try:
+            ports = serial.tools.list_ports.comports()
+            info  = next((p for p in ports if p.device == port), None)
+            if info:
+                desc = info.description or ""
+                # Détecter la vitesse USB depuis la description ou vid/pid
+                speed = ""
+                dl = desc.lower()
+                if "super" in dl or "3.0" in dl or "3.1" in dl or "3.2" in dl: speed = "SuperSpeed (5-20 Gb/s)"
+                elif "hi"   in dl or "2.0" in dl:                               speed = "Hi-Speed (480 Mb/s)"
+                elif "full" in dl or "1.1" in dl:                               speed = "Full-Speed (12 Mb/s)"
+                elif "low"  in dl or "1.0" in dl:                               speed = "Low-Speed (1.5 Mb/s)"
+                return {"connected": True, "port": port, "description": desc, "speed": speed}
+        except: pass
+        return {"connected": True, "port": port, "description": "", "speed": ""}
+
+    # ── Timing boutons (slot 0 uniquement) ───────────────────────────────────
+    def _handle_timing(self, btn_idx, event, on_msg_fn):
+        now = time.time(); st = self._btn_state.setdefault(btn_idx, {})
+        if event == "on":
+            last_on = st.get("last_on"); st["on_t"] = now; st["last_on"] = now
+            if last_on and (now-last_on)*1000 < self.DOUBLE_MS:
+                st["last_on"] = None; on_msg_fn(btn_idx, "double_click")
+        elif event == "off":
+            on_t = st.get("on_t")
+            if on_t is None: return
+            st["on_t"] = None
+            on_msg_fn(btn_idx, "long_press" if (now-on_t)*1000 >= self.LONG_MS else "press")
 
 # ── PLUGINS ────────────────────────────────────────────────────────────────────
 class PluginManager:
@@ -849,7 +974,7 @@ class PluginManager:
 # ── MACRODECK CORE ────────────────────────────────────────────────────────────
 class MacroDeck:
     def __init__(self):
-        self.cfg=ConfigManager(); self.ws_clients=set()
+        self.cfg=ConfigManager(); self.ws_clients=set(); self._loop=None
         self.plugins=PluginManager()
         self.engine=ActionEngine(self.cfg,self._broadcast,self.plugins)
         self.metrics=Metrics(); self.transport=Transport(self._on_esp32)
@@ -862,8 +987,14 @@ class MacroDeck:
             if profile and self.overlay:
                 self.overlay.show_profile(profile,self.cfg.data.get("overlay",{}))
         raw=json.dumps(obj)
-        for ws in list(self.ws_clients):
-            asyncio.ensure_future(ws.send(raw))
+        loop=self._loop
+        if loop and loop.is_running():
+            for ws in list(self.ws_clients):
+                loop.call_soon_threadsafe(asyncio.ensure_future, ws.send(raw))
+        else:
+            for ws in list(self.ws_clients):
+                try: asyncio.ensure_future(ws.send(raw))
+                except: pass
 
     def _on_app(self, app):
         for name,profile in self.cfg.data["profiles"].items():
@@ -949,9 +1080,15 @@ class MacroDeck:
         finally: self.ws_clients.discard(ws)
 
     def _serial_status(self):
-        return {"type":"serial_status","connected":self.transport.is_connected(0),
-            "connected2":self.transport.is_connected(1),
-            "port":self.transport._port_names[0],"port2":self.transport._port_names[1]}
+        return {
+            "type": "serial_status",
+            # Slot 0 — ESP32
+            "connected": self.transport.is_connected(0),
+            "port":      self.transport._port_names[0],
+            # Slots 1 & 2 — USB passifs (clés USB, hubs…)
+            "usb1": self.transport.usb_info(1),
+            "usb2": self.transport.usb_info(2),
+        }
 
     def _plugins_msg(self):
         return {"type":"plugins","data":self.plugins.catalog(),
@@ -1139,6 +1276,7 @@ class MacroDeck:
         except Exception as e: log.error(f"picker: {e}"); return ""
 
     async def run(self):
+        self._loop = asyncio.get_event_loop()
         self.transport.start(self.cfg.data.get("serial_port","AUTO"))
         srv=await websockets.serve(self._ws_handler,"localhost",WS_PORT,max_size=10*1024*1024)
         await asyncio.gather(self._metrics_loop(),srv.wait_closed())
