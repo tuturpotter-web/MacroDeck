@@ -53,7 +53,10 @@ def open_url_default(url: str):
     except: pass
 
 import psutil, keyboard, mouse, websockets
-from websockets.server import WebSocketServerProtocol
+try:
+    from websockets.server import WebSocketServerProtocol
+except ImportError:
+    from websockets.legacy.server import WebSocketServerProtocol
 
 try:
     from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
